@@ -102,7 +102,7 @@ No Streamlit secrets or API keys are required for the default app. If you want t
 ## Run locally
 
 ```bash
-cd outputs/athlete_fatigue_demo
+cd personal-readiness-assistant
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -r requirements.txt pytest
