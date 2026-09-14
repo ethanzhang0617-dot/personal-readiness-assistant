@@ -1,0 +1,156 @@
+# Personal Readiness Assistant
+
+**Release candidate: Personal Readiness Assistant V1.0 — Portfolio Release**
+
+An English-only Streamlit web prototype for two daily questions:
+
+1. **How ready am I today?**
+2. **What should I train today?**
+
+It combines a personal readiness baseline, morning recovery signals, completed training history, goals and preferred training split to generate an explainable workout direction. The default public profiles are fixed, simulated examples for Ethan, Alex and Jessica.
+
+## Mobile-first experience
+
+The portfolio release uses a mobile-first information hierarchy while keeping the same deterministic readiness and recommendation logic. At phone widths, the primary daily flow is **Today → Check-in → Train → Trends → Coach**, with a fixed five-item bottom navigation and secondary destinations grouped under **More**. Desktop widths retain the sidebar navigation.
+
+- **Today:** readiness status, primary training direction, brief explanation and inspectable Decision Trace.
+- **Check-in:** daily recovery inputs with explicit 1–5 scale labels and safety prompts.
+- **Train:** selected workout, alternatives, rationale and completed-session logging.
+- **Trends:** historical readiness and training context.
+- **Coach:** optional Qwen enhancement with deterministic fallback.
+
+The English-only product copy, browser-local data model, safety boundary, readiness engine, training recommendation engine and optional no-key Qwen architecture remain unchanged.
+
+## Product loop
+
+```text
+Profile → Morning Check-in → Readiness → Recent Training History
+        → Deterministic Workout Recommendation → Workout Template
+        → Explicit Training Log → Next Day's Context
+```
+
+The product never logs a proposed workout automatically. A completed session is added only after the user selects **Log completed workout**. The selected `WorkoutPrescription` is the single source for the displayed exercises, prescribed sets and log defaults; actual completed sets are stored separately and drive weekly exposure.
+
+Each completed session stores `session_id`, `profile_id`, `date`, `training_type`, `primary_focus`, `prescription_id`, `exercises`, `prescribed_sets`, `actual_sets`, `duration_min`, `session_rpe`, `session_load`, `muscle_set_contributions`, `completed`, `completion_status` and `notes`. Two sessions on one date remain separate because `session_id`, not date, is unique.
+
+## Local-first browser data
+
+My Local Data uses browser **IndexedDB** as the persistent source of truth and `st.session_state` as the active runtime cache. A small dependency-free Streamlit custom component provides the Python ↔ browser bridge:
+
+```text
+Streamlit UI → Python application logic → browser-storage bridge → IndexedDB
+```
+
+At startup, the bridge loads the versioned local document and hydrates the runtime cache. Profile changes, check-ins, readiness assessments, deterministic recommendations and completed training sessions queue an automatic save back to IndexedDB. Daily check-ins are unique by `profile_id + date` and update the existing date; local soreness remains part of that dated check-in, never a permanent profile field.
+
+The stored document includes `schema_version`, `updated_at`, profiles, daily check-ins, readiness history, training sessions, recommendation history, browser preferences and an optional bounded recent chat history. **Export My Data** creates `personal-readiness-backup.json`. **Import Backup** validates the schema and references before a confirmed replace. **Clear Local Data** requires confirmation and removes personal browser data while retaining fixed demo profiles.
+
+Demo profiles (Ethan, Alex and Jessica) are seeded separately and are never serialized into My Local Data. The app does not use a remote personal-history database, GitHub commits, cloud sync or automatic remote backup. Data needed for calculations or AI responses is temporarily processed by the running application. Local history does not automatically follow the user to another browser/device and may be lost if browser site data is cleared; exports are the manual backup/transfer mechanism.
+
+## Training recommendation architecture
+
+`training_recommendation_engine.py` is a pure deterministic module. It receives:
+
+- approved Green / Amber / Red / STOP readiness result and four domains;
+- reported fatigue and soreness;
+- profile goal, activity, level and preferred training split;
+- completed session dates, focuses, muscle groups, duration and session-RPE load.
+
+It returns one primary workout, two rule-generated alternatives, a duration and intensity context, avoid-today guidance, a workout template, recent-training facts, and an inspectable decision rationale. It does **not** estimate recovery percentages or make clinical claims.
+
+### Decision rules in plain language
+
+- **Green:** normal planned training can be selected. The engine favours the goal and split pattern while deprioritising muscle groups trained on the same or previous day.
+- **Amber:** elevated load or high soreness selects easy aerobic work plus mobility. With an isolated sleep-driven Amber result and low soreness, a reduced strength session can remain available: shorter duration, 2–3 sets and no failure sets.
+- **Red:** recovery / rest direction only. No heavy strength, HIIT or maximal testing.
+- **STOP:** no normal training recommendation. A safety concern overrides the workout flow and directs the user to appropriate professional assessment for acute or concerning symptoms.
+
+The rotation logic is a transparent scheduling heuristic, not proof of a fixed 48-hour recovery requirement. It looks at actual logged muscles and avoids a consecutive high-intensity repeat when another appropriate option exists.
+
+### Calendar-based training load
+
+Training Load uses completed calendar days, not the last 7 or 28 sessions. Session load remains `duration_min × session_RPE`; all completed sessions on the same date are summed into one daily load. The recent window is assessment date minus 7 days through assessment date minus 1 day. The reference window is assessment date minus 28 days through assessment date minus 8 days. Means therefore cover exactly 7 and 21 calendar days, including tracked rest days as 0 AU.
+
+A dated daily record establishes tracking coverage. Missing dates are unknown and are never silently converted to rest days. The full comparison requires all 28 dates; 14–27 covered dates are labelled limited but remain insufficient for a full 7-versus-21 comparison. When the reference mean is near zero, the load domain reports insufficient data instead of dividing by a tiny value. These windows and thresholds are transparent prototype heuristics.
+
+## AI architecture — optional, no API key
+
+The readiness and workout recommendation are always generated by deterministic rules. The optional embedded language model is [`Qwen/Qwen2.5-0.5B-Instruct`](https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct).
+
+- It is **not required** for Today, Check-in, Trends, Profile or the instant Coach.
+- It loads only after a user submits a Coach question; the app automatically attempts the enhancement after creating the deterministic context.
+- It is cached with `st.cache_resource` after that first load.
+- It has no API key, hosted-inference API, Ollama dependency or commercial LLM dependency.
+- It acts as a context-aware training coach. It uses personal context only when relevant, can answer general RIR/RPE/training questions directly, and cannot change recorded readiness or silently replace the deterministic primary workout.
+- If loading or generation fails, the canonical answer remains available and is labelled **Rule-based fallback**.
+
+The first Coach question that reaches the optional AI path downloads the public model in the Streamlit runtime cache. That is intentional for a Streamlit Community Cloud deployment; the rest of the product remains usable without model loading.
+
+## Deploy to Streamlit Community Cloud
+
+This is the primary deployment path.
+
+1. Create a GitHub repository and upload this project, with `app.py` at the repository root.
+2. Commit and push to branch `main`.
+3. Open [Streamlit Community Cloud](https://share.streamlit.io/) and sign in with GitHub.
+4. Select **Create app**, then select the repository and branch `main`.
+5. Set **Main file path** to `app.py`.
+6. Choose **Deploy** and share the resulting `https://...streamlit.app` URL.
+
+No Streamlit secrets or API keys are required for the default app. If you want to disable optional AI downloading in a particular deployment, set `DISABLE_EMBEDDED_LLM = "true"` in Streamlit secrets; deterministic coaching remains available.
+
+## Run locally
+
+```bash
+cd outputs/athlete_fatigue_demo
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt pytest
+python -m pytest -q
+python -m streamlit run app.py
+```
+
+Open the local URL Streamlit prints. The full app works before the embedded model is loaded. Submit a Coach question when you want to test the optional model path.
+
+## Files to upload to GitHub
+
+```text
+app.py
+ai_engine.py
+local_data.py
+science_content.py
+training_recommendation_engine.py
+readiness_engine.py
+profile_store.py
+demo_data.py
+ui_components.py
+styles.py
+requirements.txt
+test_app.py
+README.md
+run_demo.command
+.gitignore
+.streamlit/secrets.toml.example
+.streamlit/config.toml
+browser_storage/__init__.py
+browser_storage/frontend/index.html
+browser_storage/frontend/storage.js
+```
+
+Do not upload `.venv/`, `__pycache__/`, local model cache directories, secrets, or real personal/health exports.
+
+## Science & Logic and evidence boundary
+
+The first-level **Science & Logic** page documents system inputs, personal baseline handling, the four domains, exact overall-readiness rules, recommendation order, evidence labels, an example decision, limitations and linked PubMed references. It imports rule metadata directly from `readiness_engine.py` and `training_recommendation_engine.py`, which prevents documentation thresholds from silently drifting away from executable code.
+
+The monitoring concepts are informed by Saw et al. (2016, PMID 26423706) for subjective measures; Bourdon et al. (2017, PMID 28463642) and Haddad et al. (2017, PMID 29163016) for training-load and session-RPE monitoring; Schoenfeld et al. (2019, PMID 30558493) and Pelland et al. (2026, PMID 41343037) for volume/frequency context; Refalo et al. (2023, PMID 36334240) for proximity-to-failure context; and HRV-guided training reviews (PMID 34489178, PMID 34639599) for using autonomic status as one endurance intensity modifier. These sources support monitoring concepts and training principles; they do not validate this application's exact thresholds or recommendation algorithm.
+
+Direct sets are counted as 1.0 and mapped secondary sets as 0.5. This is a transparent productized estimate, not a precise physiological contribution ratio. Weekly targets are user-entered where available, then descriptive from recent logs, then a labelled demo heuristic; no universal optimal sets/week is claimed.
+
+For an exercise absent from the mapping table, exposure falls back once per exercise to an explicit primary muscle group, then to a clearly mappable session focus. Known and unknown exercises are added from their own actual completed sets; the session total is never applied repeatedly to multiple unknown exercises. `Full Body Strength` declares only the muscle groups its current Squat, Bench Press and Chest-Supported Row prescription can actually contribute to; Core is not declared by that candidate.
+
+## Safety, privacy and product boundary
+
+This is an educational product prototype. It is not a clinically validated fatigue prediction system, injury prediction tool, medical diagnostic system or training prescription. Workout recommendations are heuristic decision-support suggestions based on readiness, recent training history, reported soreness and goals. Acute or concerning symptoms, illness, injury, persistent deterioration, or unusual symptoms require appropriate professional assessment.
+
+The readiness engine uses personal baseline comparisons and transparent prototype heuristics. The specific thresholds, aggregation rules and time windows have not been prospectively validated. Readiness Index is a communication score, not a recovery percentage, fatigue probability or injury probability. The interface exposes **Decision factors**, **Decision Trace** and **Recommendation Rationale**, not a model's private chain-of-thought.
