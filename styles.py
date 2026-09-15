@@ -290,13 +290,48 @@ APP_CSS = """
   .ara-coach-context { display: inline-flex; align-items: center; gap: var(--ara-space-2xs); flex-wrap: wrap; padding: 3px var(--ara-space-xs); background: var(--ara-surface-2); border: 1px solid var(--ara-border); border-radius: var(--ara-radius-pill); }
   /* Settings-style rows (More page): light dividers instead of big cards. */
   .st-key-settings_rows [data-testid="stVerticalBlock"] { gap: 0 !important; }
-  .st-key-settings_rows button { justify-content: space-between; text-align: left; background: transparent !important; border: 0 !important; border-bottom: 1px solid var(--ara-border) !important; border-radius: 0 !important; min-height: 3rem; font-weight: 550; padding-left: 0 !important; padding-right: 0 !important; }
+  .st-key-settings_rows [data-testid="stButton"] button { justify-content: space-between; text-align: left; background: transparent !important; border: 0 !important; border-bottom: 1px solid var(--ara-border) !important; border-radius: 0 !important; min-height: 3rem; font-weight: 550; padding-left: 0 !important; padding-right: 0 !important; }
   .st-key-settings_rows button > div, .st-key-settings_rows button [data-testid="stMarkdownContainer"] { width: 100%; justify-content: flex-start !important; text-align: left !important; }
   .st-key-settings_rows button p { text-align: left !important; font-size: var(--ara-font-body) !important; }
   .st-key-settings_rows button:hover { background: var(--ara-surface-2) !important; }
   /* Coach: lighter action chips and a single integrated composer. */
   .st-key-coach_quick_questions button { border-radius: var(--ara-radius-md) !important; border: 1px solid var(--ara-border) !important; background: var(--ara-surface) !important; color: var(--ara-text) !important; font-size: var(--ara-font-body-sm) !important; font-weight: 550 !important; text-align: left !important; padding: var(--ara-space-xs) var(--ara-space-sm) !important; }
   .st-key-coach_quick_questions button:hover { background: var(--ara-surface-2) !important; }
+  /* Today's context: one light surface, not a row of pills. */
+  .ara-context-surface { display: flex; flex-direction: column; gap: 2px; padding: var(--ara-space-xs) var(--ara-space-md); background: var(--ara-surface-2); border: 1px solid var(--ara-border); border-radius: var(--ara-radius-md); }
+  .ara-context-surface__row { display: flex; align-items: center; gap: var(--ara-space-xs); flex-wrap: wrap; }
+  .ara-context-surface__title { font-size: var(--ara-font-title-sm); font-weight: 700; color: var(--ara-text); }
+  .ara-context-surface__meta { font-size: var(--ara-font-secondary); color: var(--ara-text-2); }
+  /* Suggested prompts read as conversation starters: quiet rows with dividers. */
+  .st-key-coach_suggested [data-testid="stVerticalBlock"] { gap: 0 !important; }
+  /* Coach rhythm: keep the whole page inside the reserved composer area. */
+  .st-key-coach_page > [data-testid="stVerticalBlock"] { gap: var(--ara-space-sm) !important; }
+  .st-key-coach_page .ara-subtitle { margin-bottom: var(--ara-space-xs); }
+  .st-key-coach_suggested button { padding-top: 0 !important; padding-bottom: 0 !important; }
+
+  .st-key-coach_suggested [data-testid="stButton"] button { justify-content: flex-start; text-align: left; background: transparent !important; border: 0 !important; border-bottom: 1px solid var(--ara-border) !important; border-radius: 0 !important; min-height: 2.75rem; font-size: var(--ara-font-body) !important; font-weight: 550 !important; color: var(--ara-text) !important; padding-left: 0 !important; padding-right: 0 !important; }
+  .st-key-coach_suggested button { justify-content: flex-start !important; text-align: left !important; }
+  .st-key-coach_suggested button > div, .st-key-coach_suggested button [data-testid="stMarkdownContainer"] { width: 100%; justify-content: flex-start !important; text-align: left !important; }
+  .st-key-coach_suggested button p { text-align: left !important; width: 100%; font-size: var(--ara-font-body) !important; }
+  .st-key-coach_suggested button:hover { background: var(--ara-surface-2) !important; }
+  /* "How the Coach works" behaves as a disclosure row, not a fifth CTA. */
+  .st-key-coach_how [data-testid="stExpander"], .st-key-coach_how [data-testid="stExpander"] details, .st-key-coach_how details { border: 0 !important; background: transparent !important; box-shadow: none !important; }
+  .st-key-coach_how [data-testid="stExpander"] summary { font-size: var(--ara-font-secondary) !important; color: var(--ara-text-2) !important; padding: var(--ara-space-xs) 0 !important; }
+  .st-key-coach_how [data-testid="stExpander"] summary p { font-size: var(--ara-font-secondary) !important; }
+  /* Reserved conversation area: readable as an empty state, not dead space. */
+  .ara-chat-empty { display: flex; align-items: center; justify-content: center; min-height: 24px; color: var(--ara-text-muted); font-size: var(--ara-font-secondary); text-align: center; }
+  .ara-msg-meta { display: flex; align-items: center; gap: var(--ara-space-xs); flex-wrap: wrap; margin-bottom: 2px; }
+  .ara-msg-meta__text { font-size: var(--ara-font-caption); color: var(--ara-text-muted); }
+  /* Coach stays a comfortable reading column on wide screens: the content and
+     the pinned composer share one centred width instead of spanning 1240px. */
+  @media (min-width: 769px) {
+    .st-key-coach_page { max-width: 780px; margin: 0 auto; }
+    [data-testid="stChatInput"] { max-width: 780px; margin-left: auto; margin-right: auto; }
+  }
+  /* Message styling: user gets a quiet neutral bubble, assistant stays open. */
+  [data-testid="stChatMessage"] { background: transparent !important; border: 0 !important; padding: var(--ara-space-xs) 0 !important; }
+  [data-testid="stChatMessage"] [data-testid="stChatMessageAvatarUser"] ~ div [data-testid="stMarkdownContainer"] { background: var(--ara-surface-3); border-radius: var(--ara-radius-md); padding: var(--ara-space-sm); }
+  [data-testid="stChatMessage"] [data-testid="stMarkdownContainer"] { font-size: var(--ara-font-body); }
   [data-testid="stChatInput"] { border-radius: var(--ara-radius-lg); border: 1px solid var(--ara-border); background: var(--ara-surface); }
   [data-testid="stChatInput"] textarea { background: transparent !important; font-size: var(--ara-font-body) !important; min-height: 2.4rem !important; }
   [data-testid="stChatInput"] > div { border: 0 !important; box-shadow: none !important; background: transparent !important; }
@@ -400,6 +435,10 @@ SHELL_CSS = """
        the navigation band, so its own bottom padding only has to clear the
        navigation border - not the browser chrome it used to avoid. */
     [data-testid="stBottomBlockContainer"] { padding-bottom: .85rem !important; }
+    /* Coach: keep the reserved composer area tight so the page does not end in
+       a large empty band on short screens. */
+    [data-testid="stBottomBlockContainer"] { padding-top: .5rem !important; padding-bottom: .5rem !important; }
+    [data-testid="stChatInput"] textarea { min-height: 2.4rem !important; }
 
     /* Coach send control: a real touch target. */
     [data-testid="stChatInput"] button { min-width: 44px !important; min-height: 44px !important; }

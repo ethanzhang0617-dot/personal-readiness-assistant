@@ -338,6 +338,30 @@ def quick_questions(questions: Sequence[str], on_select: Callable[[str], None]) 
                     on_select(question)
 
 
+def coach_context_surface(assessment: Mapping[str, Any], recommendation: Mapping[str, Any]) -> None:
+    """Today's context as one compact surface: readiness, session, demand."""
+    status = assessment["overall_readiness"]
+    tone, _, _ = status_meta(status)
+    primary = (recommendation.get("primary") or {}).get("name") or "No recommendation"
+    st.markdown(
+        "<section class='ara-context-surface' style='--status:%s'>"
+        "<div class='ara-kicker'>TODAY CONTEXT</div>"
+        "<div class='ara-context-surface__row'>%s<span class='ara-context-surface__title'>%s</span>"
+        "<span class='ara-context-surface__meta'>· %s demand</span></div>"
+        "</section>" % (tone, status_badge(status, label=status_word(status)), escape(primary), escape(str(recommendation.get("intensity", "—")))),
+        unsafe_allow_html=True,
+    )
+
+
+def coach_suggestions(questions: Sequence[str], on_select: Callable[[str], None]) -> None:
+    """Conversation starters: a light vertical list, not a form button grid."""
+    st.markdown("<div class='ara-kicker'>SUGGESTED</div>", unsafe_allow_html=True)
+    with st.container(key="coach_suggested"):
+        for index, question in enumerate(questions):
+            if st.button(f"→  {question}", key=f"coach_suggest_{index}", width="stretch"):
+                on_select(question)
+
+
 def history_list(rows: Sequence[Mapping[str, str]], empty: str = "No records yet.") -> None:
     """Compact two-line history rows; never a clipped data table."""
     if not rows:

@@ -27,7 +27,8 @@ from readiness_engine import (AMBER, BASELINE_LIMITED_DAYS, BASELINE_NORMAL_DAYS
 from styles import inject_styles
 from science_content import EVIDENCE_LABELS, EVIDENCE_MAP, LIMITATIONS, READINESS_RULE_METADATA, RECOMMENDATION_RULE_METADATA, REFERENCES
 from training_recommendation_engine import MUSCLE_GROUPS, prescription_log_defaults, recommend_training, workout_template
-from ui_components import (PRIMARY_NAV_ITEMS, SECONDARY_NAV_ITEMS, callout, decision_trace_section, detail_row,
+from ui_components import (PRIMARY_NAV_ITEMS, SECONDARY_NAV_ITEMS, callout,
+                           coach_context_surface, coach_suggestions, decision_trace_section, detail_row,
                            exercise_list, flow_card, history_list, identity_badge, insight_card, metric_grid, metric_tile,
                            mobile_readiness_hero, page_intro, primary_cta, quick_questions, readiness_hero,
                            secondary_cta, status_badge, status_word, today_training_card, train_primary_card,
@@ -757,31 +758,35 @@ def _enhance_question(index: int, profile: dict[str, Any], assessment: dict[str,
 
 def render_coach(profile: dict[str, Any], assessment: dict[str, Any]) -> None:
     recommendation = current_recommendation(profile, assessment)
-    page_intro("AI COACH", "AI Coach",
-               "Context-aware Training Coach · readiness, today's session and general training questions.")
-    coach_context_header(assessment, recommendation)
-    questions = COACH_QUICK_QUESTIONS
-    quick_questions(questions, lambda question: (_submit_question(question, profile, assessment, recommendation), st.rerun()))
-    if st.session_state.get("chat_notice"):
-        st.caption(st.session_state.chat_notice)
-    for index, message in enumerate(profile_chat_history(profile)):
-        with st.chat_message(message["role"]):
-            if message["role"] == "assistant":
-                provider = message.get("provider", "")
-                label = ("VERIFIED DATA" if provider.startswith("Verified")
-                         else "AI-ENHANCED EXPLANATION" if message.get("kind") == "enhanced"
-                         else "RULE-BASED FALLBACK")
-                st.caption(label + " · " + message.get("provider", ""))
-            st.markdown(message["content"])
-            if message.get("kind") == "fallback" and not str(message.get("provider", "")).startswith("Verified"):
-                st.caption("Rule-based fallback · The deterministic recommendation remains valid.")
-    if question := st.chat_input("Ask about readiness, training, recovery, RIR, volume, or today's workout…"):
+    with st.container(key="coach_page"):
+        page_intro("AI COACH", "AI Coach", "Ask about your readiness, today's session, training and recovery.")
+        coach_context_surface(assessment, recommendation)
+        history = profile_chat_history(profile)
+        coach_suggestions(COACH_QUICK_QUESTIONS,
+                          lambda question: (_submit_question(question, profile, assessment, recommendation), st.rerun()))
+        with st.container(key="coach_how"):
+            with st.expander("How the Coach works"):
+                st.write("This is the Context-aware Training Coach. The Coach can answer general training and recovery questions and explains your readiness, today's session and recent training.")
+                st.write("Readiness and the primary recommendation come from the deterministic engines, and personal facts are verified from your structured recorded data. The AI explains that context; it does not choose or replace a workout.")
+        if st.session_state.get("chat_notice"):
+            st.caption(st.session_state.chat_notice)
+        for message in history:
+            with st.chat_message(message["role"]):
+                if message["role"] == "assistant":
+                    provider = message.get("provider", "")
+                    if provider.startswith("Verified"):
+                        st.markdown(f"<div class='ara-msg-meta'><span class='ara-badge ara-badge--local'>VERIFIED DATA</span><span class='ara-msg-meta__text'>{escape(provider)}</span></div>", unsafe_allow_html=True)
+                    else:
+                        label = "AI explanation" if message.get("kind") == "enhanced" else "Rule-based answer"
+                        st.markdown(f"<div class='ara-msg-meta'><span class='ara-msg-meta__text'>{escape(label)} · {escape(provider)}</span></div>", unsafe_allow_html=True)
+                st.markdown(message["content"])
+                if message.get("kind") == "fallback" and not str(message.get("provider", "")).startswith("Verified"):
+                    st.markdown("<div class='ara-msg-meta'><span class='ara-msg-meta__text'>The deterministic answer stays valid.</span></div>", unsafe_allow_html=True)
+    # The composer stays at the top level so Streamlit keeps it pinned to the
+    # bottom dock (inside a container it would render inline).
+    if question := st.chat_input("Ask about your training or recovery…"):
         _submit_question(question, profile, assessment, recommendation)
         st.rerun()
-    with st.expander("How the Coach works"):
-        st.write("The Coach can answer general training and recovery questions and explains your readiness, today's session and recent training. "
-                 "The Readiness Engine and Training Recommendation Engine create the status, recommendation and alternatives first, and readiness and the primary recommendation stay deterministic. "
-                 "Optional Qwen wording is never used to choose, replace or modify a workout.")
 
 
 def render_more(profile: dict[str, Any]) -> None:

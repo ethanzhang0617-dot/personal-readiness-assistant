@@ -647,7 +647,8 @@ def test_coach_copy_matches_context_aware_architecture() -> None:
     source = Path("app.py").read_text(encoding="utf-8")
     assert "Context-aware Training Coach" in source
     assert "answer general training and recovery questions" in source
-    assert "Ask about readiness, training, recovery, RIR, volume" in source
+    # the composer still tells the user what the Coach covers
+    assert "Ask about your training or recovery" in source
     assert "only explains the approved result" not in source
     assert "Approved workout:" not in source
 

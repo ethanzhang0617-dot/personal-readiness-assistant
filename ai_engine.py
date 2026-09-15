@@ -230,6 +230,17 @@ def get_ai_response(question: str, profile: Mapping[str, Any], assessment: Mappi
         return ai_facts.CLARIFICATION, "Verified data", "The question could not be mapped to a supported personal metric, so no model was used."
     if route.kind == "CORRECTION":
         previous_route = ai_facts.route_question(route.previous_question or "", (), facts)
+        if previous_route.kind != "PERSONAL_FACT":
+            # A challenge can follow another challenge ("Are you sure?" after a
+            # correction, or after a non-factual question). Walk back to the most
+            # recent question that asked for a verifiable personal fact.
+            for message in reversed(list(history)):
+                if message.get("role") != "user":
+                    continue
+                candidate = ai_facts.route_question(str(message.get("content", "")), (), facts)
+                if candidate.kind == "PERSONAL_FACT":
+                    previous_route = candidate
+                    break
         previous_answer = next((str(message.get("content", "")) for message in reversed(list(history)) if message.get("role") == "assistant"), None)
         answer = ai_facts.correction_answer(previous_route if previous_route.kind == "PERSONAL_FACT" else None, facts, previous_answer)
         return answer, "Verified data", "Your previous answer was re-checked against your recorded data."
