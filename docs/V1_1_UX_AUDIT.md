@@ -674,3 +674,44 @@ by the Coach facts layer (`ai_facts.EXPOSURE_PERIOD`), so the product has one de
 | Phase 3.5 coach grounding after the redesign | **PASS** (unchanged; re-verified end to end) |
 | Real iOS Safari / Android rendering | **REAL DEVICE NOT VERIFIED** |
 | 768×1024 Key Signals first-screen visibility | Still below the fold on that viewport (tablet is treated as the mobile shell); acceptable, Key Signals is a second-screen section |
+
+---
+
+# FINAL FAST-TRACK PRODUCTIZATION SPRINT
+
+**Scope:** Train, Coach, Mobile Profile/More, Check-in, Trends, cross-page consistency, visual and
+regression QA. Engines, shell contract, Coach grounding and the model provider were not touched.
+
+## 23. Page outcomes
+
+| Page | Change |
+|---|---|
+| **Train** | Rebuilt as the transparency page: PRIMARY RECOMMENDATION card (WHAT TO TRAIN / HOW HARD / duration / RIR guidance from the prescription) → ALTERNATIVES (labelled second-class, never overwrites the primary) → HOW TO EXECUTE IT (prescription items) → AVOID TODAY (neutral card, no medical styling) → DECISION TRACE (all eight steps via `decision_trace_row`, exposure labelled "7-day exposure" with the weighted-working-sets note) → LOG WORKOUT (unchanged logging flow, submit CTA ≥ 44 px) |
+| **Coach** | Compact context header (readiness badge · session · session demand), four compact quick questions in a two-column grid instead of eight full-width buttons, send control enlarged to 44 × 44 px, and the "scroll to bottom on entry" behaviour fixed while the conversation is still empty. Grounding untouched: factual queries still bypass the model. |
+| **More / Profile** | `profile_switcher()`: ACTIVE PROFILE card with name, DEMO/LOCAL badge and goal chip, plus a "Change profile" selector that works on phones (the sidebar is hidden there). Switching routes through `set_active_profile` + rerun, so Today/Check-in/Train/Trends/Coach all follow. One label vocabulary (`DEMO · Name` / `LOCAL · Name`) shared with the sidebar. |
+| **Check-in** | Explicit scale direction for every subjective field (fatigue/soreness/stress: higher = more; motivation and sleep quality: higher is better), demo shortcuts in one compact row, local soreness reduced from seven stacked selects to a two-column grid, submit CTA ≥ 44 px. Page height at 390×844: 2483 px → 2079 px. |
+| **Trends** | Dates formatted as `16 Sep` (no raw timestamps), stacked tables replaced by compact history rows (`st.dataframe` removed), HRV/RHR/Sleep charts use a non-zero axis with a dashed rolling mean and an amber personal-baseline reference line, Training Load chart uses the same styling, and the window selector is honestly labelled "Last 7 / 28 / All check-ins" because the window counts records, not calendar days. |
+| **Cross-page** | Terminology test: no "calendar week", no "Last 7 days" for record windows, exposure is "weighted working sets", duration and training load stay distinct, readiness is never called a recovery percentage. |
+
+## 24. Fast-track QA evidence
+
+| Check | Result |
+|---|---|
+| Compile / tests | PASS; 105 → **114** tests (9 new: Train hierarchy, Train decision trace, RIR helper, Coach quick questions + touch targets, More profile switcher, profile switching isolation, check-in scale semantics, trend date + chart helpers, cross-page terminology) |
+| Geometry, 375/390/393/430/768 × 6 pages | No horizontal overflow; **no content behind the bottom navigation** (`hidden@bottom = 0`) on every page |
+| Touch targets | Primary/secondary CTAs, navigation, More, form submits, number steppers and quick questions are ≥ 44 px on mobile. Remaining sub-44 px items are Streamlit-native secondary controls: select-slider tick buttons (12 px), help tooltips (16 px) and the chart toolbar (22 px). |
+| Today regression | 390×844: readiness, training, session demand and CTA all visible; CTA hit test passes (see section 19) |
+| Deskop 1440×900 | Sidebar, profile selector, Today and Train render with no overflow; desktop layout unchanged apart from the earlier token normalisations |
+| Full flow | Today → View workout → Train → Coach (factual query + correction) → Check-in → Trends → More → switch to Alex → Today shows Alex. No runtime exceptions at any step. |
+| Coach factual regression | `How much have I trained back this week?` → "9.5 weighted working sets … not days and not sessions"; `but one week has only 7 days` → re-checked answer; no topic switch |
+| Persistence | Local profile write → reload → hydrate verified again in Chromium; demo profiles still excluded from the stored state |
+| Performance | No new runtime dependency; opening Today/Train/Check-in/Trends/More does not load Qwen (asserted in tests); `use_container_width` deprecation removed |
+
+## 25. Known issues (fast-track)
+
+| Priority | Issue |
+|---|---|
+| P2 | Streamlit-native secondary controls remain below 44 px (slider ticks, help icons, chart toolbar) — they come from the framework, not from the product components. |
+| P2 | Coach explanation answers frequently fall back to the deterministic explanation with Qwen2.5-0.5B because the grounding guard rejects the draft; this is intentional (grounding over eloquence) and would need a stronger model to change. |
+| P2 | Desktop keeps the Streamlit header (Deploy / menu) because hiding it was scoped to the mobile shell. |
+| P2 | Real iOS Safari / Android behaviour is still **NOT VERIFIED** (Chromium emulation only). |
