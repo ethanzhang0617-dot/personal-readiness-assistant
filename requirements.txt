@@ -1,5 +1,4 @@
 streamlit>=1.42,<2
 pandas>=2.2,<3
 numpy>=1.26,<3
-transformers>=4.45,<6
-torch>=2.4,<3
+requests>=2.31,<3
