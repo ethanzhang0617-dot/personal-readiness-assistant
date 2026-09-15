@@ -738,3 +738,100 @@ def test_browser_storage_bridge_has_no_visible_surface() -> None:
     assert 'id="status"' in index_html
     assert "clip:rect(0 0 0 0)" in index_html
     assert "font:12px sans-serif" not in index_html
+
+
+def test_design_tokens_are_emitted_and_used() -> None:
+    """Tokens are the single source of truth; component CSS must not re-invent values."""
+    import re
+
+    import styles
+
+    assert styles.DESIGN_TOKENS
+    for token in styles.DESIGN_TOKENS:
+        assert f"{token}:" in styles.DESIGN_TOKEN_CSS, token
+    assert "--ara-status-green" in styles.COLOR_TOKENS
+    assert "--ara-radius-lg" in styles.RADIUS_TOKENS
+    assert "--ara-space-md" in styles.SPACE_TOKENS
+    assert "--ara-font-body" in styles.TYPE_TOKENS
+    # component CSS consumes tokens instead of hard-coded colours
+    assert re.search(r"#[0-9a-fA-F]{3,6}", styles.APP_CSS) is None
+    assert "var(--ara-surface)" in styles.APP_CSS and "var(--ara-font-body)" in styles.APP_CSS
+    # the mobile shell layer keeps its own contract and still uses tokens
+    assert "var(--ara-nav-bg)" in styles.SHELL_CSS and "var(--ara-radius-sm)" in styles.SHELL_CSS
+
+
+def test_status_colour_has_exactly_one_source() -> None:
+    """One status -> one colour token, shared by Python and CSS."""
+    import re
+
+    import styles
+    import ui_components
+
+    for status, token in styles.STATUS_TONE_TOKENS.items():
+        assert token in styles.COLOR_TOKENS, status
+        assert ui_components.status_tone(status) == f"var({token})"
+    for status in (GREEN, AMBER, RED, STOP, INSUFFICIENT):
+        tone, _, _ = ui_components.status_meta(status)
+        assert tone.startswith("var(--ara-status-")
+    # no colour literal may exist in the component layer
+    source = Path("ui_components.py").read_text(encoding="utf-8")
+    assert re.search(r"#[0-9a-fA-F]{3,6}", source) is None
+
+
+def test_status_badge_pairs_colour_with_text_label() -> None:
+    import ui_components
+
+    for status in (GREEN, AMBER, RED, STOP, INSUFFICIENT):
+        badge = ui_components.status_badge(status)
+        assert f"var({ui_components.status_tone(status)})".replace("var(var(", "var(") in badge or "var(--ara-status-" in badge
+        assert status in badge  # the label is always present, never colour alone
+        assert "ara-badge--status" in badge
+    explicit = ui_components.status_badge(GREEN, label="Ready")
+    assert ">Ready<" in explicit
+
+
+def test_metric_tile_recommendation_and_trace_row_render_labelled_content() -> None:
+    import ui_components
+
+    tile = ui_components.metric_tile("HRV", "-0.6", unit="SD", context="vs 28-day baseline", status=AMBER)
+    assert "HRV" in tile and "-0.6" in tile and "SD" in tile and "vs 28-day baseline" in tile
+    assert "AMBER" in tile and "ara-metric__label" in tile
+    card = ui_components.recommendation_card("Back + Biceps", ("Normal", "50-65 min"), "Why", variant="avoid")
+    assert "ara-recommendation--avoid" in card and "Back + Biceps" in card and "ara-chip" in card
+    row = ui_components.decision_trace_row("Weekly exposure", "Back 9 / 12 sets", note="Last 7 days", status=GREEN)
+    assert "ara-trace-row__label" in row and "Back 9 / 12 sets" in row and "Last 7 days" in row
+    # untrusted text is escaped
+    assert "<script>" not in ui_components.insight_card("<script>alert(1)</script>", "body")
+
+
+def test_cta_hierarchy_renders_primary_and_secondary() -> None:
+    from streamlit.testing.v1 import AppTest
+
+    script = (
+        "import ui_components\n"
+        "ui_components.primary_cta('View workout', 'cta_primary')\n"
+        "ui_components.secondary_cta('View details', 'cta_secondary')\n"
+    )
+    app = AppTest.from_string(script).run(timeout=30)
+    assert not app.exception
+    assert app.button(key="cta_primary").proto.type == "primary"
+    assert app.button(key="cta_secondary").proto.type == "secondary"
+
+
+def test_design_system_has_no_new_runtime_dependency() -> None:
+    """The design system stays on Streamlit + custom CSS.
+
+    ``streamlit-shadcn-ui`` 1.4.0 requires Streamlit >= 1.60 while this project is
+    verified on 1.56, so it was evaluated and rejected in PHASE 3. This guard keeps
+    a half-finished migration from slipping in unnoticed.
+    """
+    requirements = Path("requirements.txt").read_text(encoding="utf-8")
+    assert "shadcn" not in requirements.casefold()
+    for module in ("app.py", "styles.py", "ui_components.py"):
+        source = Path(module).read_text(encoding="utf-8")
+        assert "streamlit_shadcn_ui" not in source, module
+        assert "shadcn" not in source.casefold(), module
+    preview = Path("scripts/design_system_preview.py")
+    assert preview.exists()
+    app_source = Path("app.py").read_text(encoding="utf-8")
+    assert "design_system_preview" not in app_source

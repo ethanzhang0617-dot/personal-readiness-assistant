@@ -25,7 +25,8 @@ from styles import inject_styles
 from science_content import EVIDENCE_LABELS, EVIDENCE_MAP, LIMITATIONS, READINESS_RULE_METADATA, RECOMMENDATION_RULE_METADATA, REFERENCES
 from training_recommendation_engine import MUSCLE_GROUPS, prescription_log_defaults, recommend_training, workout_template
 from ui_components import (PRIMARY_NAV_ITEMS, SECONDARY_NAV_ITEMS, callout, detail_row, domain_card, flow_card,
-                           mobile_readiness_hero, page_intro, readiness_hero, training_summary)
+                           mobile_readiness_hero, page_intro, primary_cta, readiness_hero, secondary_cta,
+                           training_summary)
 from ui_components import mobile_bottom_nav_component, mobile_utility_nav_component
 
 
@@ -313,7 +314,7 @@ def render_today(profile: dict[str, Any], assessment: dict[str, Any]) -> None:
     recommendation = current_recommendation(profile, assessment)
     primary = recommendation["primary"]
     training_summary(primary["name"], recommendation["intensity"], recommendation["duration"], primary["training_type"])
-    if st.button("View workout", key=f"open_train_{profile['user_id']}", type="primary", width="stretch"):
+    if primary_cta("View workout", key=f"open_train_{profile['user_id']}"):
         go_to("Train")
     st.subheader("WHY TODAY?")
     for reason in recommendation["rationale"][:3]:
@@ -575,16 +576,16 @@ def render_more(profile: dict[str, Any]) -> None:
     else:
         callout("LOCAL BROWSER STORAGE", "Saved personal history is stored locally in this browser on this device. This prototype does not persist personal history to a remote personal database.")
     st.subheader("PROFILE")
-    if st.button("Training goal, split, sleep need and weekly targets", key="more_profile", width="stretch"):
+    if secondary_cta("Training goal, split, sleep need and weekly targets", key="more_profile"):
         go_to("Profile")
     st.subheader("DATA")
-    if st.button("Export, import or clear local data", key="more_data", width="stretch"):
+    if secondary_cta("Export, import or clear local data", key="more_data"):
         go_to("Profile")
     st.subheader("LEARN")
-    if st.button("Science & Logic", key="more_science", width="stretch"):
+    if secondary_cta("Science & Logic", key="more_science"):
         go_to("Science & Logic")
     st.subheader("INFO")
-    if st.button("Data & Privacy and About", key="more_about", width="stretch"):
+    if secondary_cta("Data & Privacy and About", key="more_about"):
         go_to("About")
 
 
