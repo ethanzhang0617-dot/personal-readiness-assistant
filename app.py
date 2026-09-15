@@ -11,8 +11,10 @@ from typing import Any
 
 import pandas as pd
 import streamlit as st
+import altair as alt
 
 from ai_engine import ai_diagnostics, ai_engine_status, get_ai_response, get_instant_response
+import styles
 from browser_storage import browser_storage_bridge
 from local_data import (LocalDataError, clear_local_runtime, export_backup, hydrate_runtime_state, import_backup,
                         serialize_runtime_state)
@@ -25,9 +27,12 @@ from readiness_engine import (AMBER, BASELINE_LIMITED_DAYS, BASELINE_NORMAL_DAYS
 from styles import inject_styles
 from science_content import EVIDENCE_LABELS, EVIDENCE_MAP, LIMITATIONS, READINESS_RULE_METADATA, RECOMMENDATION_RULE_METADATA, REFERENCES
 from training_recommendation_engine import MUSCLE_GROUPS, prescription_log_defaults, recommend_training, workout_template
-from ui_components import (PRIMARY_NAV_ITEMS, SECONDARY_NAV_ITEMS, callout, detail_row, flow_card, identity_badge,
-                           metric_grid, metric_tile, mobile_readiness_hero, page_intro, primary_cta, readiness_hero,
-                           secondary_cta, today_training_card, training_summary, why_today)
+from ui_components import (PRIMARY_NAV_ITEMS, SECONDARY_NAV_ITEMS, callout, decision_trace_section, detail_row,
+                           flow_card, history_list, identity_badge, insight_card, metric_grid, metric_tile,
+                           mobile_readiness_hero, page_intro, primary_cta, quick_questions, readiness_hero,
+                           secondary_cta, status_badge, status_word, today_training_card, train_primary_card,
+                           training_summary, why_today)
+from ui_components import context_chip
 from ui_components import mobile_bottom_nav_component, mobile_utility_nav_component
 
 
@@ -41,6 +46,66 @@ SPLITS = ("No Preference", "Body Part Split", "Push / Pull / Legs", "Upper / Low
 SCENARIOS = ("Well Recovered Day", "Moderate Fatigue Day", "High Load / Poor Sleep Day")
 MORE_NAV_ITEMS = SECONDARY_NAV_ITEMS
 NAV_ITEMS = PRIMARY_NAV_ITEMS + SECONDARY_NAV_ITEMS
+
+#: Four high-value Coach entry points (PHASE FT). The exposure question keeps
+#: running through the deterministic fact resolver; it is not removed.
+COACH_QUICK_QUESTIONS = (
+    "Why this workout?",
+    "Can I train harder today?",
+    "Explain my readiness",
+    "What should I adjust in my recent training?",
+)
+
+#: Explicit direction for every check-in scale: the number alone is ambiguous
+#: because a high motivation is good while high fatigue is not.
+SUBJECTIVE_SCALE_GUIDANCE = {
+    "Sleep quality": "1 = very poor · 5 = very good (higher is better)",
+    "Fatigue": "1 = none · 5 = severe (higher = more fatigue)",
+    "Soreness": "1 = none · 5 = severe (higher = more soreness)",
+    "Stress": "1 = none · 5 = severe (higher = more stress)",
+    "Motivation": "1 = very low · 5 = very high (higher is better)",
+}
+
+
+def scale_guidance(field: str) -> str:
+    return SUBJECTIVE_SCALE_GUIDANCE[field]
+
+
+def format_trend_date(value: Any) -> str:
+    """One date format across Trends tables and history rows (for example ``16 Sep``)."""
+    stamp = pd.to_datetime(value, errors="coerce")
+    if pd.isna(stamp):
+        return str(value)
+    return stamp.strftime("%d %b")
+
+
+def build_trend_chart(frame: pd.DataFrame, value_col: str, mean_col: str, unit: str, baseline: float | None, colour: str) -> alt.LayerChart | None:
+    """A readable trend line: real data range, rolling mean, optional baseline rule."""
+    data = frame[["date", value_col, mean_col]].dropna(subset=[value_col])
+    if data.empty:
+        return None
+    base = alt.Chart(data).encode(x=alt.X("date:T", axis=alt.Axis(format="%d %b", title=None, labelAngle=0)))
+    layers = [
+        base.mark_line(strokeDash=[4, 3], color=styles.COLOR_TOKENS["--ara-text-2"]).encode(
+            y=alt.Y(f"{mean_col}:Q", title=unit, scale=alt.Scale(zero=False))),
+        base.mark_line(color=colour, strokeWidth=2).encode(
+            y=alt.Y(f"{value_col}:Q", title=unit, scale=alt.Scale(zero=False))),
+        base.mark_point(filled=True, size=18, color=colour).encode(
+            y=alt.Y(f"{value_col}:Q", title=unit, scale=alt.Scale(zero=False))),
+    ]
+    if baseline is not None:
+        rule_frame = pd.DataFrame({"baseline": [float(baseline)]})
+        layers.append(alt.Chart(rule_frame).mark_rule(strokeDash=[2, 2], color=styles.COLOR_TOKENS["--ara-status-amber"]).encode(
+            y=alt.Y("baseline:Q", title=unit)))
+    return alt.layer(*layers).properties(height=190).resolve_scale(y="shared")
+
+
+def trend_chart(frame: pd.DataFrame, value_col: str, mean_col: str, unit: str, baseline: float | None, colour: str) -> None:
+    chart = build_trend_chart(frame, value_col, mean_col, unit, baseline, colour)
+    if chart is None:
+        st.caption("Not enough recorded data yet.")
+        return
+    st.altair_chart(chart, width="stretch")
 
 
 def _local_document() -> dict[str, Any]:
@@ -155,6 +220,30 @@ def current_recommendation(profile: dict[str, Any], assessment: dict[str, Any]) 
     return recommend_training(profile, assessment, profile.get("training_history", []))
 
 
+def rir_guidance(session: dict[str, Any]) -> str | None:
+    """RIR wording straight from the prescription (for example ``2–4 RIR``)."""
+    exercises = session.get("exercises") or []
+    for exercise in exercises:
+        raw = str(exercise.get("rir", ""))
+        if "RIR" in raw.upper():
+            head = raw.split(";")[0].strip()
+            if head:
+                return head
+    return None
+
+
+def coach_context_header(assessment: dict[str, Any], recommendation: dict[str, Any]) -> None:
+    """Compact Coach context: readiness, today's session, session demand."""
+    st.markdown(
+        "<div class='ara-coach-context'>"
+        + status_badge(assessment["overall_readiness"], label=status_word(assessment["overall_readiness"]))
+        + context_chip(recommendation["primary"]["name"])
+        + context_chip(f"{recommendation['intensity']} demand")
+        + "</div>",
+        unsafe_allow_html=True,
+    )
+
+
 def validate_uploaded_csv(uploaded: Any) -> tuple[list[dict[str, Any]], list[str]]:
     required = {"date", "rmssd_ms", "resting_hr_bpm", "sleep_hours", "sleep_quality", "session_duration_min", "session_rpe", "fatigue", "soreness", "stress", "motivation"}
     try:
@@ -203,16 +292,56 @@ def render_mobile_utility_nav() -> None:
     mobile_utility_nav_component(go_to)
 
 
+def profile_options() -> tuple[list[dict[str, Any]], list[str]]:
+    """One vocabulary for profile labels, shared by the sidebar and mobile More."""
+    profiles = list_profiles(st.session_state)
+    labels = [("DEMO · " if item.get("is_demo") else "LOCAL · ") + item["name"] for item in profiles]
+    return profiles, labels
+
+
+def profile_label(profile: dict[str, Any]) -> str:
+    return ("DEMO · " if profile.get("is_demo") else "LOCAL · ") + profile["name"]
+
+
+def switch_active_profile(state: Any, profiles: list[dict[str, Any]], labels: list[str], selected_label: str, current_id: str) -> bool:
+    """Activate the selected profile. Returns True when a rerun is required."""
+    selected = profiles[labels.index(selected_label)]["user_id"]
+    if selected == current_id:
+        return False
+    set_active_profile(state, selected)
+    return True
+
+
+def profile_switcher(profile: dict[str, Any]) -> None:
+    """Active profile card plus a switcher that works without the desktop sidebar."""
+    profiles, labels = profile_options()
+    demo = bool(profile.get("is_demo"))
+    st.markdown(
+        "<div class='ara-profile-card'>"
+        "<div class='ara-fact-label'>ACTIVE PROFILE</div>"
+        f"<div class='ara-fact-value'>{escape(profile['name'])}</div>"
+        f"<div class='ara-fact-meta'>{identity_badge(demo)}{context_chip(profile.get('training_goal', 'General Fitness'))}</div>"
+        "</div>", unsafe_allow_html=True,
+    )
+    if demo:
+        st.caption("Demo data is separate from My Local Data and is not included in exports.")
+    if len(profiles) > 1:
+        choice = st.selectbox("Change profile", labels, index=labels.index(profile_label(profile)), key="mobile_profile_switch")
+        if switch_active_profile(st.session_state, profiles, labels, choice, profile["user_id"]):
+            st.rerun()
+    if st.session_state.get("storage_error"):
+        st.error(st.session_state.storage_error)
+    elif st.session_state.get("storage_status"):
+        st.caption(st.session_state.storage_status)
+
+
 def render_sidebar(profile: dict[str, Any]) -> None:
+    """Desktop shell: the sidebar owns its own active-profile selector."""
     with st.sidebar:
         st.markdown("### ⚡ Personal Readiness")
-        profiles = list_profiles(st.session_state)
-        ids = [item["user_id"] for item in profiles]
-        labels = [("DEMO · " if item.get("is_demo") else "MY LOCAL DATA · ") + item["name"] for item in profiles]
-        selected_label = st.selectbox("Active profile", labels, index=ids.index(profile["user_id"]))
-        selected = profiles[labels.index(selected_label)]["user_id"]
-        if selected != profile["user_id"]:
-            set_active_profile(st.session_state, selected)
+        profiles, labels = profile_options()
+        selected_label = st.selectbox("Active profile", labels, index=labels.index(profile_label(profile)))
+        if switch_active_profile(st.session_state, profiles, labels, selected_label, profile["user_id"]):
             st.rerun()
         st.caption(f"{profile['primary_activity']} · {profile['training_goal']}")
         if st.button("+ Create My Local Profile", width="stretch"):
@@ -379,13 +508,15 @@ def render_today(profile: dict[str, Any], assessment: dict[str, Any]) -> None:
 
 
 def render_checkin(profile: dict[str, Any]) -> None:
-    page_intro("MORNING READINESS", "Check-in", "Record recovery signals first. Completed session-RPE belongs in Training Log after a workout.")
+    page_intro("MORNING READINESS", "Check-in", "Record today's recovery signals. Completed session-RPE belongs in the training log after a workout.")
     if profile.get("is_demo"):
-        for column, scenario in zip(st.columns(3), SCENARIOS):
-            with column:
-                if st.button(scenario.replace(" Day", ""), key=f"scenario_{scenario}_{profile['user_id']}", width="stretch"):
-                    set_draft(profile, scenario)
-                    st.rerun()
+        st.caption("Demo shortcuts")
+        with st.container(key="checkin_scenarios"):
+            for column, scenario in zip(st.columns(3), SCENARIOS):
+                with column:
+                    if st.button(scenario.replace(" Day", ""), key=f"scenario_{scenario}_{profile['user_id']}", width="stretch"):
+                        set_draft(profile, scenario)
+                        st.rerun()
     draft = get_draft(profile)
     with st.form(f"checkin_{profile['user_id']}"):
         st.subheader("Recovery")
@@ -397,32 +528,33 @@ def render_checkin(profile: dict[str, Any]) -> None:
             sleep = st.number_input("Sleep duration (hours)", 0.0, 24.0, float(draft["sleep_hours"]), step=.1)
             quality = st.select_slider("Sleep quality", options=[1, 2, 3, 4, 5], value=int(draft["sleep_quality"]), help="1 = very poor · 5 = very good")
         st.subheader("How do you feel?")
+        st.caption("Every scale runs 1 → 5. Higher is better only for motivation; for fatigue, soreness and stress a higher number means more of it.")
         c1, c2, c3, c4 = st.columns(4)
         with c1:
-            st.caption("1 = low · 5 = high")
+            st.caption(scale_guidance("Fatigue"))
             fatigue = st.select_slider("Fatigue", [1, 2, 3, 4, 5], value=int(draft["fatigue"]))
         with c2:
-            st.caption("1 = low · 5 = high")
+            st.caption(scale_guidance("Soreness"))
             soreness = st.select_slider("Soreness", [1, 2, 3, 4, 5], value=int(draft["soreness"]))
         with c3:
-            st.caption("1 = low · 5 = high")
+            st.caption(scale_guidance("Stress"))
             stress = st.select_slider("Stress", [1, 2, 3, 4, 5], value=int(draft["stress"]))
         with c4:
-            st.caption("1 = low · 5 = high")
+            st.caption(scale_guidance("Motivation"))
             motivation = st.select_slider("Motivation", [1, 2, 3, 4, 5], value=int(draft["motivation"]))
         st.subheader("Local soreness (optional)")
         st.caption("Not reported is left blank and is reset each day.")
         local_soreness = {}
-        for column, group in zip(st.columns(4), ("Chest", "Back", "Shoulders", "Arms")):
-            with column:
-                existing = draft.get("local_soreness", {}).get(group)
-                value = st.selectbox(group, ["Not reported", 0, 1, 2, 3, 4, 5], index=0 if existing is None else int(existing) + 1, key=f"checkin_soreness_{profile['user_id']}_{group}")
-                if value != "Not reported": local_soreness[group] = int(value)
-        for column, group in zip(st.columns(3), ("Quads", "Hamstrings / Glutes", "Core")):
-            with column:
-                existing = draft.get("local_soreness", {}).get(group)
-                value = st.selectbox(group, ["Not reported", 0, 1, 2, 3, 4, 5], index=0 if existing is None else int(existing) + 1, key=f"checkin_soreness_{profile['user_id']}_{group}")
-                if value != "Not reported": local_soreness[group] = int(value)
+        with st.container(key="checkin_soreness"):
+            # Two per row on phones: seven full-width selects was the longest part
+            # of the check-in, and four per row is too narrow to read.
+            for index, group in enumerate(("Chest", "Back", "Shoulders", "Arms", "Quads", "Hamstrings / Glutes", "Core")):
+                if index % 2 == 0:
+                    row = st.columns(2)
+                with row[index % 2]:
+                    existing = draft.get("local_soreness", {}).get(group)
+                    value = st.selectbox(group, ["Not reported", 0, 1, 2, 3, 4, 5], index=0 if existing is None else int(existing) + 1, key=f"checkin_soreness_{profile['user_id']}_{group}")
+                    if value != "Not reported": local_soreness[group] = int(value)
         st.subheader("Safety check")
         flags = st.multiselect("Select any current safety concern", SAFETY_FLAGS, default=draft.get("safety_flags", []), help="Any selection disables a normal workout recommendation.")
         analyse = st.form_submit_button("Calculate readiness", type="primary", width="stretch")
@@ -441,8 +573,8 @@ def render_checkin(profile: dict[str, Any]) -> None:
 
 
 def render_train(profile: dict[str, Any], assessment: dict[str, Any]) -> None:
-    """Mobile-first home for the existing deterministic prescription and log."""
-    page_intro("TODAY'S TRAINING", "Train", "Review the selected workout, understand the recommendation, then log only what you actually complete.")
+    """Why this session, how to execute it, and what was actually completed."""
+    page_intro("TODAY'S SESSION", "Train", "Why this session was selected, how to execute it, and what you actually completed.")
     recommendation = current_recommendation(profile, assessment)
     primary = recommendation["primary"]
     choices = [primary, *recommendation["alternatives"]]
@@ -450,29 +582,42 @@ def render_train(profile: dict[str, Any], assessment: dict[str, Any]) -> None:
     selected_name = st.session_state.get(f"selected_workout_{profile['user_id']}", primary["name"])
     if selected_name not in names:
         selected_name = primary["name"]
-    selected_name = st.radio("Today's workout", names, index=names.index(selected_name), horizontal=True, key=f"train_choice_{profile['user_id']}")
+
+    # 1. Primary recommendation — highest visual priority, straight from the engine.
+    train_primary_card(primary["name"], primary["training_type"], recommendation["intensity"], recommendation["duration"], rir_guidance(primary))
+
+    # 2. Alternatives — explicitly second class: they never replace the primary.
+    if recommendation["alternatives"]:
+        st.subheader("ALTERNATIVES")
+        st.caption("Rule-generated options. Selecting one never overwrites the primary recommendation.")
+        selected_name = st.radio("Preview another option", names, index=names.index(selected_name), horizontal=True, key=f"train_choice_{profile['user_id']}")
+    else:
+        selected_name = primary["name"]
     st.session_state[f"selected_workout_{profile['user_id']}"] = selected_name
     selected = next(item for item in choices if item["name"] == selected_name)
     label = "PRIMARY RECOMMENDATION" if selected_name == primary["name"] else "RULE-GENERATED ALTERNATIVE"
-    training_summary(selected["name"], selected["intensity"], selected["duration"], selected["training_type"])
-    st.caption(label + " · Selecting an alternative never overwrites the Primary recommendation.")
-    st.subheader("WHY THIS WORKOUT?")
-    for reason in recommendation["rationale"][:3]:
-        st.markdown(f"- {reason}")
+
+    # 3. Execution: the prescription for whichever session is selected.
     template = workout_template(selected)
-    st.subheader("WORKOUT")
+    st.subheader("HOW TO EXECUTE IT")
+    st.caption(f"{label} · {template['title']} · {template['intensity']} · {template['duration']}")
     for item in template["items"]:
-        st.markdown(f"<section class='ara-exercise-card'>{item}</section>", unsafe_allow_html=True)
+        st.markdown(f"<section class='ara-exercise-card'>{escape(item)}</section>", unsafe_allow_html=True)
     st.caption(template["note"])
-    if recommendation["alternatives"]:
-        st.subheader("ALTERNATIVES")
-        st.caption(" · ".join(item["name"] for item in recommendation["alternatives"]))
+
+    # 4. Avoid today — lowest priority, neutral tone (no medical-style alarm).
     if recommendation["avoid"]:
-        st.subheader("AVOID TODAY")
-        st.caption(" · ".join(recommendation["avoid"]))
+        insight_card("Avoid today", " · ".join(recommendation["avoid"]) + ". Not the current priority for this week's exposure.")
+
+    # 5. Decision trace — the deterministic factors, not model reasoning.
+    st.subheader("DECISION TRACE")
+    st.caption("The product rules and recorded inputs behind this session. Not hidden model reasoning.")
+    decision_trace_section(recommendation["decision_trace"])
+
+    # 6. Log what was actually completed.
     if assessment["overall_readiness"] != "STOP":
         st.subheader("LOG WORKOUT")
-        st.caption("Weekly exposure uses actual completed sets, not the planned prescription.")
+        st.caption("7-day exposure uses actual completed sets (weighted working sets), not the planned prescription.")
         defaults = prescription_log_defaults(selected)
         with st.form(f"mobile_training_log_{profile['user_id']}_{selected['prescription_id']}"):
             duration_default = float(sum(selected.get("estimated_duration_min", [45, 45])) / 2)
@@ -495,7 +640,7 @@ def render_train(profile: dict[str, Any], assessment: dict[str, Any]) -> None:
 
 
 def render_trends(profile: dict[str, Any], assessment: dict[str, Any]) -> None:
-    page_intro("YOUR HISTORY", "Trends", "Look for patterns across your signals and completed training, not a single perfect score.")
+    page_intro("YOUR TRENDS", "Trends", "Patterns across your own recovery signals and completed training, not a single score.")
     history = pd.DataFrame(profile["history"])
     if not history.empty:
         history["date"] = pd.to_datetime(history["date"])
@@ -505,21 +650,32 @@ def render_trends(profile: dict[str, Any], assessment: dict[str, Any]) -> None:
         history["rhr_7d"] = history["resting_hr_bpm"].rolling(7, min_periods=1).mean()
         history["sleep_7d"] = history["sleep_hours"].rolling(7, min_periods=1).mean()
         history["load_7d"] = history["session_load"].rolling(7, min_periods=1).mean()
-        shown = history.tail(st.radio("Time window", (7, 28, len(history)), format_func=lambda value: "Last 7 days" if value == 7 else "Last 28 days" if value == 28 else "All history", horizontal=True))
+        # The window selector counts recorded check-ins, so it is labelled as
+        # check-ins rather than as calendar days.
+        window = st.radio("Time window", (7, 28, len(history)),
+                          format_func=lambda value: f"Last {value} check-ins" if value != len(history) else f"All {len(history)} check-ins",
+                          horizontal=True)
+        shown = history.tail(window)
+        baseline = assessment.get("baseline") or {}
         charts = st.columns(2)
         with charts[0]:
-            st.subheader("HRV trend")
-            st.line_chart(shown.set_index("date")[["ln_rmssd", "lnrmssd_7d"]].rename(columns={"ln_rmssd": "Daily LnRMSSD", "lnrmssd_7d": "7-day average"}), height=230)
+            st.subheader("HRV")
+            st.caption("LnRMSSD · personal-baseline reference")
+            trend_chart(shown, "ln_rmssd", "lnrmssd_7d", "LnRMSSD", baseline.get("lnrmssd_mean"), "#171717")
         with charts[1]:
             st.subheader("Resting HR")
-            st.line_chart(shown.set_index("date")[["resting_hr_bpm", "rhr_7d"]].rename(columns={"resting_hr_bpm": "Daily resting HR", "rhr_7d": "7-day average"}), height=230)
+            st.caption("bpm · personal-baseline reference")
+            trend_chart(shown, "resting_hr_bpm", "rhr_7d", "bpm", baseline.get("rhr_mean"), "#171717")
         with charts[0]:
             st.subheader("Sleep")
-            st.line_chart(shown.set_index("date")[["sleep_hours", "sleep_7d"]].rename(columns={"sleep_hours": "Hours", "sleep_7d": "7-day average"}), height=210)
+            st.caption("Hours · personal-baseline reference")
+            trend_chart(shown, "sleep_hours", "sleep_7d", "hours", baseline.get("sleep_mean"), "#171717")
         with charts[1]:
-            st.subheader("Training Load")
-            st.line_chart(shown.set_index("date")[["session_load", "load_7d"]].rename(columns={"session_load": "AU", "load_7d": "7-day average"}), height=210)
-    st.subheader("Training Frequency / History")
+            st.subheader("Training load")
+            st.caption("AU (duration × session RPE) · rolling mean")
+            trend_chart(shown, "session_load", "load_7d", "AU", None, "#171717")
+        st.caption("Dashed line: rolling mean over the most recent 7 check-ins. Horizontal reference: your personal baseline mean where available.")
+    st.subheader("Training history")
     training = pd.DataFrame(profile.get("training_history", []))
     if training.empty:
         st.info("No completed sessions logged yet.")
@@ -527,12 +683,24 @@ def render_trends(profile: dict[str, Any], assessment: dict[str, Any]) -> None:
         training["date"] = pd.to_datetime(training["date"])
         start = pd.Timestamp(date.today() - timedelta(days=13))
         count = int((training["date"] >= start).sum())
-        st.metric("Past 14 days training sessions", count)
-        st.dataframe(training.sort_values("date", ascending=False)[["date", "training_type", "primary_focus", "duration_min", "session_rpe", "session_load"]], width="stretch", hide_index=True)
-    st.subheader("Readiness History")
+        st.metric("Sessions in the last 14 days", count)
+        rows = [
+            {"date": format_trend_date(row["date"]), "title": str(row.get("primary_focus") or row.get("training_type") or "Session"),
+             "meta": f"{row.get('training_type', 'Training')} · {float(row.get('duration_min') or 0):.0f} min",
+             "extra": f"RPE {row.get('session_rpe', '—')} · {float(row.get('session_load') or 0):.0f} AU"}
+            for _, row in training.sort_values("date", ascending=False).iterrows()
+        ]
+        history_list(rows, "No completed sessions logged yet.")
+    st.subheader("Readiness history")
     assessments = pd.DataFrame(profile["assessments"])
     if not assessments.empty:
-        st.dataframe(assessments.sort_values("assessment_date", ascending=False), width="stretch", hide_index=True)
+        rows = [
+            {"date": format_trend_date(row["assessment_date"]), "title": f"{row.get('overall_readiness', '—')}",
+             "meta": f"Index {row['readiness_index'] if row.get('readiness_index') is not None else '—'}",
+             "extra": f"Baseline confidence {row.get('assessment_confidence', '—')}"}
+            for _, row in assessments.sort_values("assessment_date", ascending=False).iterrows()
+        ]
+        history_list(rows, "No readiness assessments recorded yet.")
 
 
 def profile_chat_history(profile: dict[str, Any]) -> list[dict[str, str]]:
@@ -584,14 +752,11 @@ def _enhance_question(index: int, profile: dict[str, Any], assessment: dict[str,
 
 def render_coach(profile: dict[str, Any], assessment: dict[str, Any]) -> None:
     recommendation = current_recommendation(profile, assessment)
-    page_intro("AI COACH", "Context-aware Training Coach", "The embedded Coach can explain your current readiness and training recommendation, use relevant personal training context, and answer general training and recovery questions. The deterministic engines remain responsible for readiness status and the primary recommendation.")
-    st.caption(ai_engine_status(st.secrets))
-    st.caption(f"Primary workout: {recommendation['primary']['name']} · {recommendation['intensity']}")
-    questions = ("Why was this workout recommended?", "Why not train legs today?", "Can I do cardio instead?", "Can I swap this workout?", "What did I train recently?", "How much have I trained back this week?", "Should I reduce volume today?", "What does my readiness mean for today's workout?")
-    for index, question in enumerate(questions):
-        if st.button(question, key=f"coach_question_{profile['user_id']}_{index}", width="stretch"):
-            _submit_question(question, profile, assessment, recommendation)
-            st.rerun()
+    page_intro("AI COACH", "Context-aware Training Coach",
+               "The Coach can answer general training and recovery questions and explain your readiness, today's session and recent training. Readiness and the primary recommendation stay deterministic.")
+    coach_context_header(assessment, recommendation)
+    questions = COACH_QUICK_QUESTIONS
+    quick_questions(questions, lambda question: (_submit_question(question, profile, assessment, recommendation), st.rerun()))
     if st.session_state.get("chat_notice"):
         st.caption(st.session_state.chat_notice)
     for index, message in enumerate(profile_chat_history(profile)):
@@ -615,9 +780,8 @@ def render_coach(profile: dict[str, Any], assessment: dict[str, Any]) -> None:
 def render_more(profile: dict[str, Any]) -> None:
     """A small settings-style routing surface; it preserves the existing data flows."""
     page_intro("SETTINGS", "More", "Profile, local data controls, disclosure and product information.")
-    if profile.get("is_demo"):
-        st.info("DEMO PROFILE · Demo data is separate from My Local Data and is not included in exports.")
-    else:
+    profile_switcher(profile)
+    if not profile.get("is_demo"):
         callout("LOCAL BROWSER STORAGE", "Saved personal history is stored locally in this browser on this device. This prototype does not persist personal history to a remote personal database.")
     st.subheader("PROFILE")
     if secondary_cta("Training goal, split, sleep need and weekly targets", key="more_profile"):

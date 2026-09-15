@@ -60,6 +60,25 @@
     }
   }
 
+  /*
+   * Streamlit keeps the page pinned to the bottom whenever a top level
+   * st.chat_input is present. On a first visit to Coach that hides the context
+   * header and the intro, so scroll back to the top while the conversation is
+   * still empty. Once messages exist, normal chat behaviour is left alone.
+   */
+  function resetCoachScrollWhenEmpty(doc) {
+    if (!doc.querySelector('[data-testid="stChatInput"]')) {
+      return;
+    }
+    if (doc.querySelectorAll('[data-testid="stChatMessage"]').length > 0) {
+      return;
+    }
+    var scroller = doc.querySelector('[data-testid="stMain"], [data-testid="stAppScrollToBottomContainer"]');
+    if (scroller && scroller.scrollTop !== 0) {
+      scroller.scrollTop = 0;
+    }
+  }
+
   function install() {
     var win = shellWindow();
     if (!win) {
@@ -90,6 +109,10 @@
       win.__araShellListeners = true;
     }
     syncKeyboardState(doc, win);
+    resetCoachScrollWhenEmpty(doc);
+    win.setTimeout(function () {
+      resetCoachScrollWhenEmpty(doc);
+    }, 400);
   }
 
   install();

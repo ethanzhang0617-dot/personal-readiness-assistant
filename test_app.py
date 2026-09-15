@@ -1224,3 +1224,182 @@ def test_today_empty_local_profile_shows_onboarding_without_demo_values() -> Non
     assert any(button.label == "Complete your first check-in" for button in app.button)
     assert "Back + Biceps" not in html     # no demo recommendation for a local profile
     assert "90" not in html
+
+
+# --------------------------------------------------------------------------- #
+# FINAL FAST-TRACK SPRINT — Train / Coach / Profile / Check-in / Trends
+# --------------------------------------------------------------------------- #
+
+
+def _page_render(page: str):
+    """Render one product page and return its markdown, subheaders and elements."""
+    from streamlit.testing.v1 import AppTest
+
+    app = AppTest.from_file("app.py")
+    app.session_state["current_page"] = page
+    app.run(timeout=60)
+    assert not app.exception, app.exception
+    html = "\n".join(str(element.value) for element in app.markdown)
+    headings = [str(element.value) for element in app.subheader]
+    captions = [str(element.value) for element in app.caption]
+    return app, html, headings, captions
+
+
+_PAGE_SCRIPT = """
+import json
+import streamlit as st
+from app import current_assessment, current_recommendation, render_{page}
+from profile_store import get_profile, initialise_store
+
+initialise_store(st.session_state)
+profile = get_profile(st.session_state)
+assessment = current_assessment(profile)
+recommendation = current_recommendation(profile, assessment)
+render_{page}(profile, assessment)
+st.markdown("EXPECTEDPAYLOAD" + json.dumps({
+    "primary": recommendation["primary"]["name"],
+    "intensity": recommendation["intensity"],
+    "duration": recommendation["duration"],
+    "training_type": recommendation["primary"]["training_type"],
+    "alternatives": [item["name"] for item in recommendation["alternatives"]],
+    "avoid": list(recommendation["avoid"]),
+    "decision_trace": {entry["step"]: entry["value"] for entry in recommendation["decision_trace"]},
+    "profile": profile["name"],
+    "is_demo": bool(profile.get("is_demo")),
+}))
+"""
+
+
+def _page_run(page: str):
+    """Render a page and return its blocks plus the engine values it used."""
+    from streamlit.testing.v1 import AppTest
+
+    app = AppTest.from_string(_PAGE_SCRIPT.replace("{page}", page)).run(timeout=60)
+    assert not app.exception, app.exception
+    blocks = [str(element.value) for element in app.markdown]
+    payload_line = next(block for block in blocks if block.startswith("EXPECTEDPAYLOAD"))
+    payload = json.loads(payload_line.replace("EXPECTEDPAYLOAD", "", 1))
+    html = "\n".join(block for block in blocks if not block.startswith("EXPECTEDPAYLOAD"))
+    headings = [str(element.value) for element in app.subheader]
+    captions = [str(element.value) for element in app.caption]
+    return app, html, headings, captions, payload
+
+
+def test_train_shows_primary_hierarchy_alternatives_and_avoid() -> None:
+    _, html, headings, captions, payload = _page_run("train")
+    assert "PRIMARY RECOMMENDATION" in html
+    assert "WHAT TO TRAIN" in html and "HOW HARD" in html
+    assert payload["primary"] in html                     # engine output, not a copy
+    assert payload["intensity"] in html and payload["duration"] in html
+    assert "ALTERNATIVES" in headings
+    assert any("never overwrites the primary" in caption for caption in captions)
+    assert "HOW TO EXECUTE IT" in headings and "DECISION TRACE" in headings and "LOG WORKOUT" in headings
+
+
+def test_train_decision_trace_rows_cover_every_step() -> None:
+    _, html, _, _, payload = _page_run("train")
+    for label in ("Goal", "Programme / split", "7-day exposure", "Recent training",
+                  "Local soreness", "Readiness", "Session demand", "Recommendation"):
+        assert label in html, label
+    assert "Weighted working sets" in html          # unit clarity on the exposure row
+    for value in payload["decision_trace"].values():
+        assert str(value) in html
+
+
+def test_train_rir_guidance_comes_from_the_prescription() -> None:
+    from app import rir_guidance
+
+    profile, real_assessment, rec = _coach_fixture()
+    guidance = rir_guidance(rec["primary"])
+    assert guidance and guidance.upper().endswith("RIR")
+    assert rir_guidance({"exercises": []}) is None
+
+
+def test_coach_quick_questions_and_touch_targets() -> None:
+    from app import COACH_QUICK_QUESTIONS
+    import styles
+
+    assert len(COACH_QUICK_QUESTIONS) == 4
+    css = styles.SHELL_CSS
+    assert '[data-testid="stChatInput"] button { min-width: 44px !important; min-height: 44px !important; }' in css
+    assert '.st-key-coach_quick_questions [data-testid="stHorizontalBlock"] > [data-testid="stColumn"]' in css
+    general = css.index('[data-testid="stHorizontalBlock"] > [data-testid="stColumn"] { flex: 1 1 100%; min-width: 100%; }')
+    assert css.index('.st-key-coach_quick_questions [data-testid="stHorizontalBlock"]') > general
+    assert "resetCoachScrollWhenEmpty" in Path("mobile_shell/frontend/shell.js").read_text(encoding="utf-8")
+
+
+def test_more_page_switches_profiles_and_labels_identity() -> None:
+    app, html, _, _ = _page_render("More")
+    assert "ACTIVE PROFILE" in html
+    assert "DEMO PROFILE" in html or "LOCAL PROFILE" in html
+    assert any(select.label == "Change profile" for select in app.selectbox)
+    options = next(select.options for select in app.selectbox if select.label == "Change profile")
+    assert len(options) >= 2                     # demo profiles plus any local profile
+    assert all(option.startswith(("DEMO · ", "LOCAL · ")) for option in options)
+
+
+def test_profile_switching_sets_active_profile_and_keeps_data_separated() -> None:
+    from app import profile_label, switch_active_profile
+    from profile_store import get_profile, initialise_store
+
+    state = Runtime(profiles=[], active_profile_id="", chat_notice=None, local_preferences={})
+    del state["profiles"]
+    initialise_store(state)
+    first = get_profile(state)
+    profiles = [item for item in state["profiles"]]
+    labels = [("DEMO · " if item.get("is_demo") else "LOCAL · ") + item["name"] for item in profiles]
+    assert profile_label(first) == labels[profiles.index(first)]
+    target = next(item for item in profiles if item["user_id"] != first["user_id"])
+    assert switch_active_profile(state, profiles, labels, profile_label(target), first["user_id"])
+    assert state["active_profile_id"] == target["user_id"]
+    assert get_profile(state)["user_id"] == target["user_id"]
+    assert not switch_active_profile(state, profiles, labels, profile_label(target), target["user_id"])  # no rerun loop
+    # isolation: the demo profile never gains the other profile's history object
+    assert first["training_history"] is not target["training_history"]
+
+
+def test_checkin_scales_state_direction_explicitly() -> None:
+    from app import SUBJECTIVE_SCALE_GUIDANCE, scale_guidance
+
+    assert set(SUBJECTIVE_SCALE_GUIDANCE) == {"Sleep quality", "Fatigue", "Soreness", "Stress", "Motivation"}
+    assert "higher is better" in scale_guidance("Motivation").casefold()
+    assert "more fatigue" in scale_guidance("Fatigue").casefold()
+    assert "more soreness" in scale_guidance("Soreness").casefold()
+    assert "more stress" in scale_guidance("Stress").casefold()
+    assert "higher is better" in scale_guidance("Sleep quality").casefold()
+    _, _, headings, captions = _page_render("Check-in")
+    for section in ("Recovery", "How do you feel?", "Local soreness (optional)", "Safety check"):
+        assert section in headings
+    assert any("higher is better only for motivation" in caption.casefold() for caption in captions)
+    assert any("more fatigue" in caption.casefold() for caption in captions)
+
+
+def test_trend_dates_and_chart_helpers() -> None:
+    import pandas as pd
+
+    from app import build_trend_chart, format_trend_date
+
+    assert format_trend_date("2026-09-16") == "16 Sep"
+    assert "00:00:00" not in format_trend_date("2026-09-16 00:00:00")
+    frame = pd.DataFrame({
+        "date": pd.to_datetime(["2026-09-10", "2026-09-11", "2026-09-12"]),
+        "value": [3.9, 4.0, 4.1], "mean": [3.95, 3.98, 4.0],
+    })
+    chart = build_trend_chart(frame, "value", "mean", "LnRMSSD", 4.02, "#171717")
+    spec = json.dumps(chart.to_dict())
+    assert '"zero": false' in spec.lower()          # axis is not forced to zero
+    assert '"mark": {"type": "rule"' in spec        # personal baseline reference
+    assert build_trend_chart(frame[frame["value"] > 99], "value", "mean", "LnRMSSD", None, "#171717") is None
+
+
+def test_cross_page_terminology_is_consistent() -> None:
+    sources = "\n".join(Path(name).read_text(encoding="utf-8") for name in ("app.py", "ui_components.py", "ai_facts.py"))
+    for banned in ("calendar week", "Last 7 days", "Last 28 days", "Weekly total"):
+        assert banned not in sources, banned
+    # the product states what it is not, explicitly
+    assert "not a recovery percentage" in sources
+    assert "weighted working sets" in sources
+    assert "7-day exposure" in sources
+    assert "Session duration is not training load" in sources or "not training load" in sources
+    trends_source = Path("app.py").read_text(encoding="utf-8")
+    assert "check-ins" in trends_source and "duration × session RPE" in trends_source

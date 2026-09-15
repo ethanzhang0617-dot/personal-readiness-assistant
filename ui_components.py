@@ -19,7 +19,7 @@ Colour never comes from a literal here: status tones resolve through
 from __future__ import annotations
 
 from html import escape
-from typing import Any, Callable, Iterable, Sequence
+from typing import Any, Callable, Iterable, Mapping, Sequence
 
 import streamlit as st
 
@@ -273,6 +273,87 @@ def metric_grid(tiles: Sequence[str]) -> None:
     than four full-width stacked cards.
     """
     st.markdown("<div class='ara-metric-grid'>" + "".join(tiles) + "</div>", unsafe_allow_html=True)
+
+
+#: Display vocabulary for the deterministic decision trace. One place, so Today,
+#: Train and any future page name the same step the same way.
+DECISION_TRACE_LABELS: dict[str, tuple[str, str | None]] = {
+    "GOAL": ("Goal", None),
+    "PROGRAMME": ("Programme / split", None),
+    "WEEKLY EXPOSURE": ("7-day exposure", "Weighted working sets · direct 1.0, secondary 0.5"),
+    "RECENT TRAINING": ("Recent training", None),
+    "LOCAL SORENESS": ("Local soreness", None),
+    "READINESS": ("Readiness", None),
+    "SESSION DEMAND": ("Session demand", None),
+    "RECOMMENDATION": ("Recommendation", None),
+}
+
+
+def decision_trace_section(entries: Sequence[Mapping[str, Any]]) -> None:
+    """The deterministic decision factors, as compact labelled rows."""
+    rows = []
+    for entry in entries:
+        step = str(entry.get("step", "")).replace("_", " ").strip().upper()
+        label, note = DECISION_TRACE_LABELS.get(step, (step.title(), None))
+        rows.append(decision_trace_row(label, str(entry.get("value", "")), note))
+    st.markdown("<section class='ara-trace'>" + "".join(rows) + "</section>", unsafe_allow_html=True)
+
+
+def session_facts(name: str, training_type: str, session_demand: str, duration: str, rir_guidance: str | None = None) -> str:
+    """WHAT to train / HOW HARD, shared by Today and Train."""
+    rir = f"<div class='ara-fact-meta'>{context_chip(rir_guidance)}</div>" if rir_guidance else ""
+    return (
+        "<div class='ara-fact-grid'>"
+        "<div class='ara-fact-row'>"
+        "<div class='ara-fact-label'>WHAT TO TRAIN</div>"
+        f"<div class='ara-fact-value ara-fact-value--primary'>{escape(name)}</div>"
+        f"<div class='ara-fact-meta'>{context_chip(training_type)}</div>"
+        "</div>"
+        "<div class='ara-fact-row'>"
+        "<div class='ara-fact-label'>HOW HARD</div>"
+        f"<div class='ara-fact-value'>{escape(session_demand)}</div>"
+        f"<div class='ara-fact-meta'>{context_chip(duration)}{rir}</div>"
+        "</div>"
+        "</div>"
+    )
+
+
+def train_primary_card(name: str, training_type: str, session_demand: str, duration: str, rir_guidance: str | None = None) -> None:
+    """Train's primary recommendation: the page's highest visual priority."""
+    st.markdown(
+        "<section class='ara-training-summary ara-training-summary--primary' style='--status:var(--ara-status-green)'>"
+        "<div class='ara-kicker'>PRIMARY RECOMMENDATION</div>"
+        + session_facts(name, training_type, session_demand, duration, rir_guidance)
+        + "</section>", unsafe_allow_html=True,
+    )
+
+
+def quick_questions(questions: Sequence[str], on_select: Callable[[str], None]) -> None:
+    """Compact two-column prompt chips (uses the shell's scoped column exemption)."""
+    with st.container(key="coach_quick_questions"):
+        columns = st.columns(2, gap="small")
+        for index, question in enumerate(questions):
+            with columns[index % 2]:
+                if st.button(question, key=f"coach_quick_{index}", width="stretch"):
+                    on_select(question)
+
+
+def history_list(rows: Sequence[Mapping[str, str]], empty: str = "No records yet.") -> None:
+    """Compact two-line history rows; never a clipped data table."""
+    if not rows:
+        st.caption(empty)
+        return
+    items = []
+    for row in rows:
+        meta = " · ".join(value for value in (row.get("meta"), row.get("extra")) if value)
+        items.append(
+            "<div class='ara-history-row'>"
+            f"<div class='ara-history-date'>{escape(str(row.get('date', '')))}</div>"
+            f"<div class='ara-history-main'>{escape(str(row.get('title', '')))}</div>"
+            f"<div class='ara-history-meta'>{escape(meta)}</div>"
+            "</div>"
+        )
+    st.markdown("<section class='ara-history'>" + "".join(items) + "</section>", unsafe_allow_html=True)
 
 
 def why_today(direction: Sequence[str], demand: Sequence[str]) -> None:

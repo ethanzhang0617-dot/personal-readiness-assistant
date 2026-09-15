@@ -275,6 +275,16 @@ APP_CSS = """
   .ara-why-group { display: flex; flex-direction: column; gap: var(--ara-space-2xs); }
   .ara-why-list { margin: 0; padding-left: var(--ara-space-md); color: var(--ara-text-2); font-size: var(--ara-font-body); line-height: 1.45; }
   .ara-why-list li { margin-bottom: var(--ara-space-2xs); }
+  .ara-training-summary--primary { border-left: 6px solid var(--status); }
+  .ara-trace { display: flex; flex-direction: column; }
+  .ara-coach-context { display: flex; align-items: center; gap: var(--ara-space-xs); flex-wrap: wrap; margin-bottom: var(--ara-space-xs); }
+  .ara-history { display: flex; flex-direction: column; }
+  .ara-history-row { display: flex; flex-direction: column; gap: 2px; padding: var(--ara-space-sm) 0; border-bottom: 1px solid var(--ara-border); }
+  .ara-history-row:last-child { border-bottom: 0; }
+  .ara-history-date { font-size: var(--ara-font-caption); font-weight: 700; letter-spacing: .08em; color: var(--ara-text-muted); text-transform: uppercase; }
+  .ara-history-main { font-size: var(--ara-font-body); color: var(--ara-text); }
+  .ara-history-meta { font-size: var(--ara-font-secondary); color: var(--ara-text-2); }
+  .ara-profile-card { display: flex; flex-direction: column; gap: var(--ara-space-2xs); padding: var(--ara-space-md); background: var(--ara-surface); border: 1px solid var(--ara-border); border-radius: var(--ara-radius-lg); margin-bottom: var(--ara-space-xs); }
   @media (min-width: 769px) {
     .ara-metric-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   }
@@ -352,16 +362,32 @@ SHELL_CSS = """
 
     /* Secondary destinations: one lightweight row above the content. */
     .st-key-mobile_utility_nav { display: flex; margin: 0 0 .1rem; }
-    .st-key-mobile_utility_nav button { min-height: 1.75rem !important; border: 0 !important; background: transparent !important; color: var(--ara-utility-text) !important; padding: .1rem .1rem !important; }
+    .st-key-mobile_utility_nav button { min-height: 2.75rem !important; border: 0 !important; background: transparent !important; color: var(--ara-utility-text) !important; padding: .1rem .35rem !important; }
 
     /* The chat composer lives inside the shortened scrolling viewport, above
        the navigation band, so its own bottom padding only has to clear the
        navigation border - not the browser chrome it used to avoid. */
     [data-testid="stBottomBlockContainer"] { padding-bottom: .85rem !important; }
 
+    /* Coach send control: a real touch target. */
+    [data-testid="stChatInput"] button { min-width: 44px !important; min-height: 44px !important; }
+    /* Form submit CTAs and the number steppers need real touch targets too. */
+    [data-testid="stFormSubmitButton"] button, [data-testid="stBaseButton-secondaryFormSubmit"], [data-testid="stBaseButton-primaryFormSubmit"] { min-height: 2.75rem !important; }
+    [data-testid="stNumberInput"] button { min-width: 2.75rem !important; min-height: 2.75rem !important; }
+
     /* Single-column content on phones; the navigation row is exempt above. */
     [data-testid="stHorizontalBlock"] { flex-wrap: wrap; }
     [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] { flex: 1 1 100%; min-width: 100%; }
+    /* Scoped exemptions from the single-column rule: these rows stay multi-column
+       because they are compact grouped controls, not page content. */
+    .st-key-coach_quick_questions [data-testid="stHorizontalBlock"],
+    .st-key-checkin_soreness [data-testid="stHorizontalBlock"],
+    .st-key-checkin_scenarios [data-testid="stHorizontalBlock"] { flex-wrap: nowrap !important; }
+    .st-key-coach_quick_questions [data-testid="stHorizontalBlock"] > [data-testid="stColumn"],
+    .st-key-checkin_soreness [data-testid="stHorizontalBlock"] > [data-testid="stColumn"],
+    .st-key-checkin_scenarios [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] { flex: 1 1 0 !important; min-width: 0 !important; }
+    .st-key-coach_quick_questions button, .st-key-checkin_scenarios button { min-height: 2.75rem !important; }
+    .st-key-checkin_scenarios button { font-size: var(--ara-font-body-sm) !important; }
     h1 { font-size: var(--ara-font-page-title-mobile); }
     .ara-hero { padding: var(--ara-space-md); }
     .ara-card { min-height: auto; margin-bottom: var(--ara-space-xs); }
