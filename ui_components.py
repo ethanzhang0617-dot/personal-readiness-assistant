@@ -356,6 +356,42 @@ def history_list(rows: Sequence[Mapping[str, str]], empty: str = "No records yet
     st.markdown("<section class='ara-history'>" + "".join(items) + "</section>", unsafe_allow_html=True)
 
 
+def exercise_list(items: Sequence[str]) -> None:
+    """Prescription lines as a clean list: exercise name + dosage line.
+
+    The engine's template items read ``"Lat Pulldown: 2 sets × 8–12 · 2–4 RIR"``;
+    only the display is split, the prescription itself is untouched.
+    """
+    rows = []
+    for item in items:
+        name, _, meta = str(item).partition(": ")
+        if not meta:
+            name, meta = str(item), ""
+        rows.append(
+            "<div class='ara-exercise-row'>"
+            f"<div class='ara-exercise-row__name'>{escape(name)}</div>"
+            + (f"<div class='ara-exercise-row__meta'>{escape(meta)}</div>" if meta else "")
+            + "</div>"
+        )
+    st.markdown("<section class='ara-exercise-list'>" + "".join(rows) + "</section>", unsafe_allow_html=True)
+
+
+def trend_header(title: str, unit: str, latest: str | None = None, baseline: str | None = None) -> None:
+    """Light metric header for a trend chart: title, unit, latest and baseline."""
+    values = []
+    if latest:
+        values.append(f"<span>Latest <b>{escape(latest)}</b></span>")
+    if baseline:
+        values.append(f"<span>Your baseline <b>{escape(baseline)}</b></span>")
+    st.markdown(
+        "<div class='ara-trend-head'>"
+        f"<div class='ara-trend-head__title'>{escape(title)}<span class='ara-trend-head__unit'>{escape(unit)}</span></div>"
+        + (f"<div class='ara-trend-head__values'>{''.join(values)}</div>" if values else "")
+        + "</div>",
+        unsafe_allow_html=True,
+    )
+
+
 def why_today(direction: Sequence[str], demand: Sequence[str]) -> None:
     """Deterministic explanation: why this direction, and why this demand."""
     def group(label: str, items: Sequence[str]) -> str:

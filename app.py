@@ -28,10 +28,10 @@ from styles import inject_styles
 from science_content import EVIDENCE_LABELS, EVIDENCE_MAP, LIMITATIONS, READINESS_RULE_METADATA, RECOMMENDATION_RULE_METADATA, REFERENCES
 from training_recommendation_engine import MUSCLE_GROUPS, prescription_log_defaults, recommend_training, workout_template
 from ui_components import (PRIMARY_NAV_ITEMS, SECONDARY_NAV_ITEMS, callout, decision_trace_section, detail_row,
-                           flow_card, history_list, identity_badge, insight_card, metric_grid, metric_tile,
+                           exercise_list, flow_card, history_list, identity_badge, insight_card, metric_grid, metric_tile,
                            mobile_readiness_hero, page_intro, primary_cta, quick_questions, readiness_hero,
                            secondary_cta, status_badge, status_word, today_training_card, train_primary_card,
-                           training_summary, why_today)
+                           training_summary, trend_header, why_today)
 from ui_components import context_chip
 from ui_components import mobile_bottom_nav_component, mobile_utility_nav_component
 
@@ -84,20 +84,26 @@ def build_trend_chart(frame: pd.DataFrame, value_col: str, mean_col: str, unit: 
     data = frame[["date", value_col, mean_col]].dropna(subset=[value_col])
     if data.empty:
         return None
-    base = alt.Chart(data).encode(x=alt.X("date:T", axis=alt.Axis(format="%d %b", title=None, labelAngle=0)))
+    base = alt.Chart(data).encode(x=alt.X("date:T", axis=alt.Axis(format="%d %b", title=None, labelAngle=0,
+                                                                grid=False, tickSize=0, domainColor=styles.COLOR_TOKENS["--ara-border"])))
     layers = [
         base.mark_line(strokeDash=[4, 3], color=styles.COLOR_TOKENS["--ara-text-2"]).encode(
-            y=alt.Y(f"{mean_col}:Q", title=unit, scale=alt.Scale(zero=False))),
+            y=alt.Y(f"{mean_col}:Q", title=unit, scale=alt.Scale(zero=False),
+                    axis=alt.Axis(grid=True, gridColor=styles.COLOR_TOKENS["--ara-border"], gridDash=[2, 4],
+                                  tickSize=0, domain=False, labelColor=styles.COLOR_TOKENS["--ara-text-muted"], titleColor=styles.COLOR_TOKENS["--ara-text-muted"]))),
         base.mark_line(color=colour, strokeWidth=2).encode(
             y=alt.Y(f"{value_col}:Q", title=unit, scale=alt.Scale(zero=False))),
-        base.mark_point(filled=True, size=18, color=colour).encode(
+        base.mark_point(filled=True, size=14, color=colour, opacity=.9).encode(
             y=alt.Y(f"{value_col}:Q", title=unit, scale=alt.Scale(zero=False))),
     ]
     if baseline is not None:
         rule_frame = pd.DataFrame({"baseline": [float(baseline)]})
         layers.append(alt.Chart(rule_frame).mark_rule(strokeDash=[2, 2], color=styles.COLOR_TOKENS["--ara-status-amber"]).encode(
             y=alt.Y("baseline:Q", title=unit)))
-    return alt.layer(*layers).properties(height=190).resolve_scale(y="shared")
+    chart = (alt.layer(*layers)
+             .resolve_scale(y="shared")
+             .properties(height=180, background="transparent", padding={"left": 4, "top": 6, "right": 6, "bottom": 4}))
+    return chart.configure_view(stroke=None)
 
 
 def trend_chart(frame: pd.DataFrame, value_col: str, mean_col: str, unit: str, baseline: float | None, colour: str) -> None:
@@ -601,8 +607,7 @@ def render_train(profile: dict[str, Any], assessment: dict[str, Any]) -> None:
     template = workout_template(selected)
     st.subheader("HOW TO EXECUTE IT")
     st.caption(f"{label} · {template['title']} · {template['intensity']} · {template['duration']}")
-    for item in template["items"]:
-        st.markdown(f"<section class='ara-exercise-card'>{escape(item)}</section>", unsafe_allow_html=True)
+    exercise_list(template["items"])
     st.caption(template["note"])
 
     # 4. Avoid today — lowest priority, neutral tone (no medical-style alarm).
@@ -659,20 +664,20 @@ def render_trends(profile: dict[str, Any], assessment: dict[str, Any]) -> None:
         baseline = assessment.get("baseline") or {}
         charts = st.columns(2)
         with charts[0]:
-            st.subheader("HRV")
-            st.caption("LnRMSSD · personal-baseline reference")
+            trend_header("HRV", "lnRMSSD", latest=f"{shown['ln_rmssd'].iloc[-1]:.2f}" if not shown.empty else None,
+                         baseline=f"{baseline['lnrmssd_mean']:.2f}" if baseline.get("lnrmssd_mean") else None)
             trend_chart(shown, "ln_rmssd", "lnrmssd_7d", "LnRMSSD", baseline.get("lnrmssd_mean"), "#171717")
         with charts[1]:
-            st.subheader("Resting HR")
-            st.caption("bpm · personal-baseline reference")
+            trend_header("Resting HR", "bpm", latest=f"{shown['resting_hr_bpm'].iloc[-1]:.0f}" if not shown.empty else None,
+                         baseline=f"{baseline['rhr_mean']:.0f}" if baseline.get("rhr_mean") else None)
             trend_chart(shown, "resting_hr_bpm", "rhr_7d", "bpm", baseline.get("rhr_mean"), "#171717")
         with charts[0]:
-            st.subheader("Sleep")
-            st.caption("Hours · personal-baseline reference")
+            trend_header("Sleep", "hours", latest=f"{shown['sleep_hours'].iloc[-1]:.1f}" if not shown.empty else None,
+                         baseline=f"{baseline['sleep_mean']:.1f}" if baseline.get("sleep_mean") else None)
             trend_chart(shown, "sleep_hours", "sleep_7d", "hours", baseline.get("sleep_mean"), "#171717")
         with charts[1]:
-            st.subheader("Training load")
-            st.caption("AU (duration × session RPE) · rolling mean")
+            trend_header("Training load", "AU · duration × session RPE",
+                         latest=f"{shown['session_load'].iloc[-1]:.0f}" if not shown.empty else None)
             trend_chart(shown, "session_load", "load_7d", "AU", None, "#171717")
         st.caption("Dashed line: rolling mean over the most recent 7 check-ins. Horizontal reference: your personal baseline mean where available.")
     st.subheader("Training history")
@@ -752,8 +757,8 @@ def _enhance_question(index: int, profile: dict[str, Any], assessment: dict[str,
 
 def render_coach(profile: dict[str, Any], assessment: dict[str, Any]) -> None:
     recommendation = current_recommendation(profile, assessment)
-    page_intro("AI COACH", "Context-aware Training Coach",
-               "The Coach can answer general training and recovery questions and explain your readiness, today's session and recent training. Readiness and the primary recommendation stay deterministic.")
+    page_intro("AI COACH", "AI Coach",
+               "Context-aware Training Coach · readiness, today's session and general training questions.")
     coach_context_header(assessment, recommendation)
     questions = COACH_QUICK_QUESTIONS
     quick_questions(questions, lambda question: (_submit_question(question, profile, assessment, recommendation), st.rerun()))
@@ -774,7 +779,9 @@ def render_coach(profile: dict[str, Any], assessment: dict[str, Any]) -> None:
         _submit_question(question, profile, assessment, recommendation)
         st.rerun()
     with st.expander("How the Coach works"):
-        st.write("The Readiness Engine and Training Recommendation Engine create the status, recommendation and alternatives first. Optional Qwen wording is never used to choose, replace or modify a workout.")
+        st.write("The Coach can answer general training and recovery questions and explains your readiness, today's session and recent training. "
+                 "The Readiness Engine and Training Recommendation Engine create the status, recommendation and alternatives first, and readiness and the primary recommendation stay deterministic. "
+                 "Optional Qwen wording is never used to choose, replace or modify a workout.")
 
 
 def render_more(profile: dict[str, Any]) -> None:
@@ -783,18 +790,15 @@ def render_more(profile: dict[str, Any]) -> None:
     profile_switcher(profile)
     if not profile.get("is_demo"):
         callout("LOCAL BROWSER STORAGE", "Saved personal history is stored locally in this browser on this device. This prototype does not persist personal history to a remote personal database.")
-    st.subheader("PROFILE")
-    if secondary_cta("Training goal, split, sleep need and weekly targets", key="more_profile"):
-        go_to("Profile")
-    st.subheader("DATA")
-    if secondary_cta("Export, import or clear local data", key="more_data"):
-        go_to("Profile")
-    st.subheader("LEARN")
-    if secondary_cta("Science & Logic", key="more_science"):
-        go_to("Science & Logic")
-    st.subheader("INFO")
-    if secondary_cta("Data & Privacy and About", key="more_about"):
-        go_to("About")
+    with st.container(key="settings_rows"):
+        if secondary_cta("Training goal, split, sleep need and weekly targets", key="more_profile"):
+            go_to("Profile")
+        if secondary_cta("Export, import or clear local data", key="more_data"):
+            go_to("Profile")
+        if secondary_cta("Science & Logic", key="more_science"):
+            go_to("Science & Logic")
+        if secondary_cta("Data & Privacy and About", key="more_about"):
+            go_to("About")
 
 
 def render_profile(profile: dict[str, Any]) -> None:

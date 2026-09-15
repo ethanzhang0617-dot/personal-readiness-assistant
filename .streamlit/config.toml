@@ -3,3 +3,14 @@ gatherUsageStats = false
 
 [server]
 headless = true
+
+# Theme values mirror styles.COLOR_TOKENS. Streamlit uses primaryColor for every
+# interactive accent (buttons, sliders, radio dots), so the accent is charcoal:
+# green / amber / red stay reserved for readiness status only.
+[theme]
+base = "light"
+primaryColor = "#1d1d1b"
+backgroundColor = "#f7f7f4"
+secondaryBackgroundColor = "#ffffff"
+textColor = "#171717"
+font = "sans serif"
