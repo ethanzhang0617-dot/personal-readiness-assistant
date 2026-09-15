@@ -459,3 +459,133 @@ model that covers live viewport content (hitting the Today CTA hardest), and a s
 (`st.chat_input`) that the nav is drawn over on Coach — plus leaking Streamlit chrome.
 
 No product code has been changed. Ready to start **PHASE 2 — P0 Mobile Shell** on your approval.
+
+---
+
+# PHASE 2 IMPLEMENTATION OUTCOME
+
+**Commit:** `fix(mobile): make app shell safe-area aware` (see the Phase 2 report for the hash)
+**Files:** `styles.py`, `ui_components.py`, `app.py`, `mobile_shell/` (new), `browser_storage/frontend/*`, `test_app.py`
+**Architecture and rationale:** `docs/V1_1_MOBILE_SHELL.md`
+
+## 13. What changed
+
+1. The scrolling viewport (`stMain` / `stAppScrollToBottomContainer`) is shortened by the
+   navigation band, so the fixed navigation can no longer cover live content.
+2. Safe area is now effective: `mobile_shell/frontend/shell.js` adds `viewport-fit=cover` to the
+   viewport meta (re-applied through a `MutationObserver`), and the CSS uses
+   `max(env(safe-area-inset-bottom), 8px)`.
+3. The navigation is a reusable component (`ui_components.mobile_bottom_nav_component`) that owns
+   destinations, icons and active state; placement, height, z-index and safe-area spacing are owned
+   by one shell rule set in `styles.py`.
+4. Coach: the composer dock is `sticky` inside the shortened viewport, so it sits above the
+   navigation band instead of under it.
+5. Streamlit chrome is hidden on mobile (header, toolbar, Deploy, ⋮ menu, sidebar, legacy *and*
+   current expand-sidebar testids).
+6. The browser-storage bridge keeps identical IndexedDB behaviour but has no visible surface
+   (0 px frame, screen-reader-only status, hidden wrapper).
+7. One central mobile rhythm rule (`--ara-block-gap`, shell-owned) replaces the zero-height
+   stylesheet block's default gap; it is what lets the Today CTA clear the navigation at 375 px.
+
+## 14. Before / after measurements (same tooling, same viewports)
+
+### 14.1 Today primary CTA (`View workout`) at first paint
+
+| Viewport | Before: CTA box | Before: nav top | Before: visible | Before: centre hit | After: CTA box | After: nav top | After: visible | After: centre hit |
+|---|---|---|---|---|---|---|---|---|
+| 375×812 | 776.1 → 824.1 | 751.8 | **0 %** | nav button | 687.6 → 735.6 | 748 | **100 %** | CTA |
+| 390×844 | 776.1 → 824.1 | 783.8 | **16 %** | nav button | 687.6 → 735.6 | 780 | **100 %** | CTA |
+| 393×852 | 776.1 → 824.1 | 791.8 | **33 %** | nav button | 687.6 → 735.6 | 788 | **100 %** | CTA |
+| 430×932 | 753.7 → 801.7 | 871.8 | 100 % | CTA | 665.2 → 713.2 | 868 | 100 % | CTA |
+| 768×1024 | 728.1 → 776.1 | 963.8 | 100 % | CTA | 639.6 → 687.6 | 960 | 100 % | CTA |
+| 1440×900 | 741.1 → 784.3 | n/a | 100 % | CTA | 693.5 → 736.7 | n/a (hidden) | 100 % | CTA |
+
+### 14.2 Shell geometry
+
+| Item | Before (V1.0) | After (V1.1 Phase 2) |
+|---|---|---|
+| Navigation height (no inset) | 60.2 px (`7.2 px` bottom padding) | **64 px** = 56 content + 8 floor |
+| Navigation with a 34 px emulated inset | 94.2 px (mechanism correct but inert: meta had no `viewport-fit=cover`) | **90 px** = 56 + 34, viewport `754 px` |
+| `env(safe-area-inset-bottom)` read by the page | 0 px | 0 px in Chromium (no device inset to report) — **active** when the browser reports one |
+| Viewport meta | `…shrink-to-fit=no` | `…shrink-to-fit=no, viewport-fit=cover` |
+| Content hidden behind nav (bottom of page) | 733.8 px on Today; −45 px on other pages (document-end padding only) | **0 px at every mobile viewport** |
+| Horizontal overflow | none | none |
+| Navigation fully visible / fully tappable | visible; covered the CTA | visible; all five tabs clicked through with the correct active state at every mobile viewport |
+
+### 14.3 Coach composer
+
+| Metric | Before | After |
+|---|---|---|
+| Composer dock box (390×844) | 651.7 → 843.7 (`sticky`, z-index 99) | 630.4 → 780.0 |
+| Navigation box | 783.8 → 844 (z-index 1000) | 780 → 844 |
+| **Overlap** | **59.9 px** | **0 px** (gap 0.0 px) |
+| Send control | 32 × 32, partially covered | 32 × 32, hit-tests to itself (not 44 px — a Phase 8 sizing item, not a shell blocker) |
+| Textarea | 324 × 54, lower edge under the nav | 324 × 54, fully above the nav, focusable |
+
+### 14.4 Chrome and plumbing
+
+| Item | Before | After |
+|---|---|---|
+| `Deploy` button | visible on mobile | hidden (`display: none`) |
+| ⋮ developer menu | visible on mobile | hidden |
+| Sidebar expand chevron | appears after each rerun (V1.0 hid only the legacy testid) | present in the DOM after a rerun but `display: none` |
+| Storage bridge iframe | 358 × 24 at y = 11.2 (mobile) / 960 × 24 at y = 20.8 (desktop), status text legible through the header | 0 × 0, hidden wrapper, status text screen-reader-only |
+| Shell bridge iframe | n/a (did not exist) | 0 × 0, hidden wrapper |
+| Ghost "No local browser history yet." through the header | visible on every page | gone |
+
+### 14.5 Desktop 1440×900 regression
+
+| Check | Result |
+|---|---|
+| Mobile navigation hidden | PASS (`display: none`, 0 × 0) |
+| Utility (`More`) row hidden | PASS |
+| Sidebar present and usable | PASS (300 × 900; sidebar navigation switches pages, `Train` verified) |
+| Profile selector | PASS (`Active profile` label + selectbox present at y 125.6) |
+| Scrolling viewport height | PASS (900 px, unchanged) |
+| Container padding | PASS (`20.8px 80px 83.2px`, unchanged) |
+| Block gap | PASS (16 px, unchanged — the mobile rhythm rule is media-scoped) |
+| Horizontal overflow | NONE |
+| Chat composer | PASS (dock 770 → 900, textarea and send inside the viewport) |
+| Unexpected bottom spacing | NONE |
+| Content shift | Content sits ~48 px higher because the 24 px storage iframe and its block gap are gone. Intended, not a broken layout. |
+
+## 15. Persistence after the storage-surface change
+
+Chromium emulation, 390×844:
+
+| Step | Result |
+|---|---|
+| Fresh context | no IndexedDB record |
+| Create `My Local Profile` | record written; 1 non-demo profile; active profile = that profile |
+| Reload | record still present; hydrated into the runtime (Today shows the local profile's empty state) |
+| Bridge iframe height | 0 px |
+
+This closes the "IndexedDB E2E — NOT VERIFIED" gap for Chromium. IndexedDB on a real iOS/Android
+browser remains **NOT VERIFIED**.
+
+## 16. Tests
+
+| Command | Result |
+|---|---|
+| `python -m compileall .` | PASS |
+| `python -m pytest -v` | **77 / 77 passed** = 72 existing (unchanged, none skipped or weakened) + 5 new shell tests |
+
+New tests: shell spacing contract (tokens → viewport reservation → navigation, no legacy hard-coded
+offset), chrome-hiding selector list incl. the current Streamlit testid, mobile navigation rendering
++ active state + navigation behaviour, viewport-bridge contract (and that it cannot trigger a
+rerun), browser-storage invisibility.
+
+## 17. Remaining verification boundaries (unchanged by Phase 2)
+
+| Item | Status |
+|---|---|
+| Mobile shell geometry, occlusion, composer relationship, chrome, overflow | **EMULATION PASS** (Chromium, 6 viewports) |
+| Real iOS Safari bottom-toolbar behaviour and real `env()` values | **REAL DEVICE NOT VERIFIED** |
+| On-screen keyboard interaction with the composer and navigation | **REAL DEVICE NOT VERIFIED** (the CSS contract is measured by toggling `ara-keyboard-open`) |
+| Android Chrome dynamic URL-bar behaviour | **NOT VERIFIED** |
+| IndexedDB save/load + reload hydration | **EMULATION PASS**; real mobile browser **NOT VERIFIED** |
+| PWA / standalone display-mode behaviour | **NOT VERIFIED** |
+
+Items deliberately **not** touched in Phase 2 (later phases): mobile profile switching, Check-in
+scale wording and length, Trends table clipping and timestamp formatting, HRV chart axis, Today /
+Train / Coach / More redesigns, design-system migration, `streamlit-shadcn-ui`, `streamlit-echarts`.
