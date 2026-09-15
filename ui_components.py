@@ -3,18 +3,55 @@
 from __future__ import annotations
 
 from html import escape
-from typing import Any
+from typing import Any, Callable, Sequence
 
 import streamlit as st
 
 from readiness_engine import AMBER, GREEN, INSUFFICIENT, RED, STOP
+from styles import NAV_ELEMENT_KEY, UTILITY_NAV_ELEMENT_KEY
 
 
 STATUS_META = {GREEN: ("#18864b", "Ready to train", "Your signals are broadly in line with your usual range."), AMBER: ("#b96d00", "Ready, with caution", "Your recovery is slightly below your usual baseline today."), RED: ("#c53f32", "Recovery recommended", "Your current signals suggest a lower-demand day."), STOP: ("#a32626", "Pause training & review symptoms", "A safety check overrides normal training guidance."), INSUFFICIENT: ("#68717a", "Keep collecting data", "There is not enough personal history for a complete readiness decision.")}
 
+#: Primary mobile destinations. The component owns labels, icons and active
+#: state; ``styles.SHELL_CSS`` owns placement, height and safe-area spacing.
+PRIMARY_NAV_ITEMS: tuple[tuple[str, str], ...] = (("Today", "⌂"), ("Check-in", "✓"), ("Train", "↑"), ("Trends", "⌁"), ("Coach", "◌"))
+SECONDARY_NAV_ITEMS: tuple[tuple[str, str], ...] = (("More", "⋯"), ("Profile", "◎"), ("Science & Logic", "⌘"), ("About", "i"))
+
 
 def status_meta(status: str) -> tuple[str, str, str]:
     return STATUS_META.get(status, STATUS_META[INSUFFICIENT])
+
+
+def nav_label(page: str, icon: str) -> str:
+    """Two-line label used by the compact mobile navigation."""
+    return f"{icon}\n{page}"
+
+
+def mobile_bottom_nav_component(
+    current_page: str,
+    on_select: Callable[[str], None],
+    items: Sequence[tuple[str, str]] = PRIMARY_NAV_ITEMS,
+) -> None:
+    """Mobile-only bottom navigation.
+
+    The component owns the active state and the destination list; the shell CSS
+    owns height, placement, safe-area spacing, z-index and the desktop hiding
+    rule. Nothing here positions the bar.
+    """
+    with st.container(key=NAV_ELEMENT_KEY):
+        columns = st.columns(len(items), gap="small")
+        for column, (page, icon) in zip(columns, items):
+            with column:
+                if st.button(nav_label(page, icon), key=f"mobile_nav_{page}", type="primary" if page == current_page else "secondary", width="stretch"):
+                    on_select(page)
+
+
+def mobile_utility_nav_component(on_select: Callable[[str], None], page: str = "More") -> None:
+    """Secondary destinations that do not fit the five primary tabs."""
+    with st.container(key=UTILITY_NAV_ELEMENT_KEY, horizontal=True, horizontal_alignment="right"):
+        if st.button(page, key=f"mobile_{page.casefold()}", width="content"):
+            on_select(page)
 
 
 def page_intro(kicker: str, title: str, subtitle: str) -> None:

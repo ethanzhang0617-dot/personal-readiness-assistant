@@ -1,9 +1,67 @@
-"""Visual system for the Personal Readiness Assistant product shell."""
+"""Visual system for the Personal Readiness Assistant product shell.
+
+Two style layers live here and nowhere else:
+
+``APP_CSS``
+    Page and component presentation (cards, hero, typography, controls).
+
+``SHELL_CSS``
+    The mobile *shell* contract: bottom navigation placement, safe-area
+    spacing, content clearance and the Streamlit chrome that must not appear in
+    the end-user interface. One rule set owns the shell, so no page adds its own
+    offset.
+
+Shell spacing contract (single source of truth):
+
+    --ara-nav-content-h   height of the navigation row itself
+    --ara-safe-bottom     env() safe-area inset, with a non-zero floor
+    --ara-nav-h           navigation band = content height + safe inset
+    --ara-shell-bottom    space the scrolling viewport must leave free
+
+The scrolling viewport is shortened by ``--ara-shell-bottom`` instead of relying
+on document-end padding, so fixed navigation cannot cover live content at any
+scroll position. ``mobile_shell`` supplies the browser viewport/keyboard signal
+that CSS cannot read; every value above still has a CSS-only fallback.
+"""
 
 from __future__ import annotations
 
 import streamlit as st
 
+
+MOBILE_SHELL_BREAKPOINT_PX = 768
+STYLESHEET_ELEMENT_KEY = "ara_stylesheet"
+NAV_ELEMENT_KEY = "mobile_bottom_nav"
+UTILITY_NAV_ELEMENT_KEY = "mobile_utility_nav"
+SHELL_BRIDGE_ELEMENT_KEY = "mobile_shell_viewport"
+
+#: Single source of truth for the shell geometry. These are emitted into the
+#: document as CSS custom properties, so Python and CSS cannot drift apart.
+SHELL_TOKENS = {
+    "--ara-nav-content-h": "56px",                                   # navigation row height
+    "--ara-shell-floor": "8px",                                      # minimum bottom breathing room
+    "--ara-block-gap": ".7rem",                                      # mobile vertical rhythm
+    "--ara-safe-top": "env(safe-area-inset-top, 0px)",
+    "--ara-safe-bottom": "env(safe-area-inset-bottom, 0px)",
+    "--ara-shell-inset": "max(var(--ara-safe-bottom), var(--ara-shell-floor))",
+    "--ara-nav-h": "calc(var(--ara-nav-content-h) + var(--ara-shell-inset))",
+    "--ara-shell-bottom": "var(--ara-nav-h)",
+}
+
+_SHELL_ROOT_CSS = ":root {\n" + "\n".join(f"    {name}: {value};" for name, value in SHELL_TOKENS.items()) + "\n  }"
+
+#: Streamlit chrome that must not appear in the end-user mobile shell. Each
+#: selector was verified against the installed Streamlit 1.56 DOM; the expand
+#: control was renamed from ``stSidebarCollapsedControl`` in older releases.
+MOBILE_HIDDEN_CHROME_SELECTORS = (
+    '[data-testid="stHeader"]',
+    '[data-testid="stAppDeployButton"]',
+    '[data-testid="stMainMenu"]',
+    '[data-testid="stToolbar"]',
+    '[data-testid="stSidebar"]',
+    '[data-testid="stSidebarCollapsedControl"]',
+    '[data-testid="stExpandSidebarButton"]',
+)
 
 APP_CSS = """
 <style>
@@ -60,30 +118,98 @@ APP_CSS = """
   [data-testid="stRadio"] [role="radiogroup"] { gap:.35rem; flex-wrap:wrap; }
   [data-testid="stRadio"] label { border-radius:999px; }
   [data-testid="stExpander"] { border:1px solid var(--line); border-radius:12px; background:#fff; }
-  .st-key-mobile_bottom_nav, .st-key-mobile_utility_nav { display:none; }
+</style>
+"""
+
+
+SHELL_CSS = """
+<style>
+  /* ------------------------------------------------------------------ tokens */
+  """ + _SHELL_ROOT_CSS + """
+  html.ara-keyboard-open { --ara-shell-bottom: 0px; }    /* the composer needs the room */
+
+  /* The mobile shell exists only below the breakpoint; desktop keeps the
+     sidebar shell and must not render the compact navigation at all. */
+  .st-key-mobile_bottom_nav, .st-key-mobile_utility_nav { display: none; }
+
+  /* Internal plumbing is never visible product chrome. */
+  .st-key-mobile_shell_viewport, .st-key-browser_storage_bridge { display: none !important; }
+
+  /* Mobile shell only: desktop keeps the sidebar shell untouched. */
   @media (max-width: 768px) {
-    [data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"] { display:none !important; }
-    .block-container { padding: .7rem 1rem calc(6.6rem + env(safe-area-inset-bottom)) !important; max-width:100%; }
-    [data-testid="stHeader"] { background:rgba(247,247,244,.96); }
-    .ara-hero { padding:1.05rem; }
-    .ara-card { min-height:auto; margin-bottom:.45rem; }
-    .ara-mobile-hero { padding:1.05rem; gap:.65rem; align-items:flex-start; }
-    .ara-mobile-hero h2 { font-size:1.3rem; }
-    .ara-readiness-number { font-size:3.15rem; }
-    .ara-training-summary { padding:1rem; }
-    .ara-training-summary h2 { font-size:1.3rem; }
-    .ara-today-greeting h1 { font-size:1.7rem; }
-    .st-key-mobile_utility_nav { display:flex; margin:0 0 .1rem; }
-    .st-key-mobile_utility_nav button { min-height:2.35rem !important; border:0 !important; background:transparent !important; color:#4c4c48 !important; padding:.35rem .1rem !important; }
-    .st-key-mobile_bottom_nav { display:block; position:fixed; left:0; right:0; bottom:0; z-index:1000; padding:.45rem .55rem calc(.45rem + env(safe-area-inset-bottom)); background:rgba(255,255,253,.98); border-top:1px solid var(--line); box-shadow:0 -8px 24px rgba(18,18,18,.06); }
-    .st-key-mobile_bottom_nav [data-testid="stHorizontalBlock"] { flex-wrap:nowrap !important; gap:.18rem !important; }
-    .st-key-mobile_bottom_nav [data-testid="stColumn"] { min-width:0 !important; width:20% !important; flex:1 1 20% !important; }
-    .st-key-mobile_bottom_nav button { min-height:2.8rem !important; border:0 !important; border-radius:10px !important; white-space:pre-line !important; font-size:.67rem !important; line-height:1.1 !important; padding:.25rem .1rem !important; background:transparent !important; color:#5a5a56 !important; }
-    .st-key-mobile_bottom_nav button[kind="primary"] { background:#1d1d1b !important; color:#fff !important; }
-    .st-key-mobile_bottom_nav button p { font-size:.67rem !important; line-height:1.05 !important; }
-    /* Streamlit columns become intentional single-column content on phone; the fixed nav is exempt above. */
-    [data-testid="stHorizontalBlock"] { flex-wrap:wrap; }
-    [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] { flex:1 1 100%; min-width:100%; }
+    /* Reserve the navigation band out of the scrolling viewport, so fixed
+       navigation cannot cover live content at any scroll position. */
+    [data-testid="stMain"], [data-testid="stAppScrollToBottomContainer"] {
+      height: calc(100vh - var(--ara-shell-bottom)) !important;
+      max-height: calc(100vh - var(--ara-shell-bottom)) !important;
+      bottom: auto !important;
+    }
+    [data-testid="stMain"], [data-testid="stAppScrollToBottomContainer"] {
+      height: calc(100dvh - var(--ara-shell-bottom)) !important;
+      max-height: calc(100dvh - var(--ara-shell-bottom)) !important;
+    }
+    /* One central mobile rhythm rule for the shell. The injected stylesheet is
+       itself a zero-height block whose default 1rem block gap used to sit above
+       every page's first element. */
+    [data-testid="stMainBlockContainer"] > [data-testid="stVerticalBlock"] { gap: var(--ara-block-gap) !important; }
+    .st-key-ara_stylesheet { display: none !important; }
+    .block-container {
+      padding: calc(.5rem + var(--ara-safe-top)) 1rem 1.15rem !important;
+      max-width: 100%;
+    }
+
+    /* Streamlit chrome that does not belong in the end-user mobile shell.
+       Exact testids, verified against the installed Streamlit version. */
+    [data-testid="stHeader"],
+    [data-testid="stToolbar"],
+    [data-testid="stAppDeployButton"],
+    [data-testid="stMainMenu"],
+    [data-testid="stSidebar"],
+    [data-testid="stSidebarCollapsedControl"],
+    [data-testid="stExpandSidebarButton"] { display: none !important; }
+
+    /* Bottom navigation: fixed inside its own reserved band. */
+    .st-key-mobile_bottom_nav {
+      display: block;
+      position: fixed;
+      left: 0; right: 0; bottom: 0;
+      z-index: 1000;
+      height: var(--ara-nav-h);
+      box-sizing: border-box;
+      padding: .25rem .55rem var(--ara-shell-inset);
+      background: rgba(255,255,253,.98);
+      border-top: 1px solid var(--line);
+      box-shadow: 0 -8px 24px rgba(18,18,18,.06);
+      transition: transform .18s ease, opacity .18s ease;
+    }
+    html.ara-keyboard-open .st-key-mobile_bottom_nav { transform: translateY(105%); opacity: 0; pointer-events: none; }
+    .st-key-mobile_bottom_nav > [data-testid="stVerticalBlock"] { height: 100%; }
+    .st-key-mobile_bottom_nav [data-testid="stHorizontalBlock"] { flex-wrap: nowrap !important; gap: .18rem !important; height: 100%; align-items: stretch; }
+    .st-key-mobile_bottom_nav [data-testid="stColumn"] { min-width: 0 !important; width: 20% !important; flex: 1 1 20% !important; }
+    .st-key-mobile_bottom_nav button { height: 100%; min-height: 2.75rem !important; border: 0 !important; border-radius: 10px !important; white-space: pre-line !important; font-size: .67rem !important; line-height: 1.1 !important; padding: .25rem .1rem !important; background: transparent !important; color: #5a5a56 !important; }
+    .st-key-mobile_bottom_nav button[kind="primary"] { background: #1d1d1b !important; color: #fff !important; }
+    .st-key-mobile_bottom_nav button p { font-size: .67rem !important; line-height: 1.05 !important; }
+
+    /* Secondary destinations: one lightweight row above the content. */
+    .st-key-mobile_utility_nav { display: flex; margin: 0 0 .1rem; }
+    .st-key-mobile_utility_nav button { min-height: 1.75rem !important; border: 0 !important; background: transparent !important; color: #4c4c48 !important; padding: .1rem .1rem !important; }
+
+    /* The chat composer lives inside the shortened scrolling viewport, above
+       the navigation band, so its own bottom padding only has to clear the
+       navigation border - not the browser chrome it used to avoid. */
+    [data-testid="stBottomBlockContainer"] { padding-bottom: .85rem !important; }
+
+    /* Single-column content on phones; the navigation row is exempt above. */
+    [data-testid="stHorizontalBlock"] { flex-wrap: wrap; }
+    [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] { flex: 1 1 100%; min-width: 100%; }
+    .ara-hero { padding: 1.05rem; }
+    .ara-card { min-height: auto; margin-bottom: .45rem; }
+    .ara-mobile-hero { padding: 1.05rem; gap: .65rem; align-items: flex-start; }
+    .ara-mobile-hero h2 { font-size: 1.3rem; }
+    .ara-readiness-number { font-size: 3.15rem; }
+    .ara-training-summary { padding: 1rem; }
+    .ara-training-summary h2 { font-size: 1.3rem; }
+    .ara-today-greeting h1 { font-size: 1.7rem; }
     [data-testid="stMetric"] { padding:.75rem .85rem; }
     div.stButton > button, div[data-testid="stDownloadButton"] > button { min-height:3rem; font-size:.95rem; }
     [data-testid="stNumberInput"] input, [data-testid="stTextInput"] input { min-height:2.9rem; font-size:1rem; }
@@ -94,4 +220,7 @@ APP_CSS = """
 
 
 def inject_styles() -> None:
-    st.markdown(APP_CSS, unsafe_allow_html=True)
+    """Inject the style layers from a keyed block so the shell CSS can hide the
+    injected stylesheet element itself (it is plumbing, not page content)."""
+    with st.container(key=STYLESHEET_ELEMENT_KEY):
+        st.markdown(APP_CSS + SHELL_CSS, unsafe_allow_html=True)

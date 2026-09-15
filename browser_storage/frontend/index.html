@@ -2,7 +2,10 @@
 <html lang="en">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Browser storage bridge</title></head>
 <body>
-  <div id="status" role="status" style="font:12px sans-serif;color:#68717a">Preparing local browser storage…</div>
+  <!-- The bridge has no visible surface: it only syncs IndexedDB with Streamlit.
+       The status element stays for assistive technology and for the bridge's own
+       error state, but it is never laid out on the page. -->
+  <div id="status" role="status" style="position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0">Preparing local browser storage…</div>
   <script src="storage.js"></script>
 </body>
 </html>

@@ -61,11 +61,11 @@ async function execute(args) {
     status.textContent = "Local browser storage is unavailable.";
     send("streamlit:setComponentValue", {value: {ok: false, operation: args.operation, command_id: commandId, error: String(error && error.message || error)}});
   }
-  send("streamlit:setFrameHeight", {height: 24});
+  send("streamlit:setFrameHeight", {height: 0});
 }
 
 window.addEventListener("message", event => {
   if (event.data && event.data.type === "streamlit:render") execute(event.data.args || {});
 });
 send("streamlit:componentReady", {apiVersion: 1});
-send("streamlit:setFrameHeight", {height: 24});
+send("streamlit:setFrameHeight", {height: 0});

@@ -15,6 +15,7 @@ from ai_engine import ai_diagnostics, ai_engine_status, get_ai_response, get_ins
 from browser_storage import browser_storage_bridge
 from local_data import (LocalDataError, clear_local_runtime, export_backup, hydrate_runtime_state, import_backup,
                         serialize_runtime_state)
+from mobile_shell import mobile_shell_bridge
 from profile_store import (create_profile, delete_profile, generate_sample_history, get_profile, initialise_store,
                            list_profiles, log_training_session, save_assessment, save_recommendation,
                            set_active_profile, update_profile, upsert_daily_metric)
@@ -23,8 +24,9 @@ from readiness_engine import (AMBER, BASELINE_LIMITED_DAYS, BASELINE_NORMAL_DAYS
 from styles import inject_styles
 from science_content import EVIDENCE_LABELS, EVIDENCE_MAP, LIMITATIONS, READINESS_RULE_METADATA, RECOMMENDATION_RULE_METADATA, REFERENCES
 from training_recommendation_engine import MUSCLE_GROUPS, prescription_log_defaults, recommend_training, workout_template
-from ui_components import (callout, detail_row, domain_card, flow_card, mobile_readiness_hero,
-                           page_intro, readiness_hero, training_summary)
+from ui_components import (PRIMARY_NAV_ITEMS, SECONDARY_NAV_ITEMS, callout, detail_row, domain_card, flow_card,
+                           mobile_readiness_hero, page_intro, readiness_hero, training_summary)
+from ui_components import mobile_bottom_nav_component, mobile_utility_nav_component
 
 
 st.set_page_config(page_title="Personal Readiness Assistant", page_icon="⚡", layout="wide", initial_sidebar_state="expanded")
@@ -35,9 +37,8 @@ LEVELS = ("Beginner", "Intermediate", "Advanced")
 SEXES = ("Male", "Female", "Prefer not to say")
 SPLITS = ("No Preference", "Body Part Split", "Push / Pull / Legs", "Upper / Lower", "Full Body", "Running-focused", "Hybrid")
 SCENARIOS = ("Well Recovered Day", "Moderate Fatigue Day", "High Load / Poor Sleep Day")
-PRIMARY_NAV_ITEMS = (("Today", "⌂"), ("Check-in", "✓"), ("Train", "↑"), ("Trends", "⌁"), ("Coach", "◌"))
-MORE_NAV_ITEMS = (("More", "⋯"), ("Profile", "◎"), ("Science & Logic", "⌘"), ("About", "i"))
-NAV_ITEMS = PRIMARY_NAV_ITEMS + MORE_NAV_ITEMS
+MORE_NAV_ITEMS = SECONDARY_NAV_ITEMS
+NAV_ITEMS = PRIMARY_NAV_ITEMS + SECONDARY_NAV_ITEMS
 
 
 def _local_document() -> dict[str, Any]:
@@ -188,21 +189,16 @@ def render_sidebar_navigation() -> str:
 
 
 def render_bottom_navigation() -> None:
-    """Mobile-only navigation. CSS fixes this compact control to the safe area."""
-    current = st.session_state.get("current_page", "Today")
-    with st.container(key="mobile_bottom_nav"):
-        columns = st.columns(5, gap="small")
-        for column, (page, icon) in zip(columns, PRIMARY_NAV_ITEMS):
-            with column:
-                label = f"{icon}\n{page}"
-                if st.button(label, key=f"mobile_nav_{page}", type="primary" if page == current else "secondary", width="stretch"):
-                    go_to(page)
+    """Mobile-only navigation.
+
+    The reusable component lives in ``ui_components``; placement, height,
+    safe-area spacing and the desktop hiding rule live in ``styles.SHELL_CSS``.
+    """
+    mobile_bottom_nav_component(st.session_state.get("current_page", "Today"), go_to)
 
 
 def render_mobile_utility_nav() -> None:
-    with st.container(key="mobile_utility_nav", horizontal=True, horizontal_alignment="right"):
-        if st.button("More", key="mobile_more", width="content"):
-            go_to("More")
+    mobile_utility_nav_component(go_to)
 
 
 def render_sidebar(profile: dict[str, Any]) -> None:
@@ -789,6 +785,7 @@ def main() -> None:
     st.session_state.setdefault("pending_storage", None)
     _sync_browser_storage()
     inject_styles()
+    mobile_shell_bridge()
     profile = get_profile(st.session_state)
     render_sidebar(profile)
     page = render_sidebar_navigation()

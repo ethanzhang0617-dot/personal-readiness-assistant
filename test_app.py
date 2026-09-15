@@ -654,3 +654,87 @@ def test_general_chest_frequency_and_contextual_leg_alternative_answers() -> Non
     assert "twice per week" in general and rec["primary"]["name"] not in general
     assert "repetitions in reserve" in rir.casefold() and rec["primary"]["name"] not in rir
     assert rec["primary"]["name"] in alternative and "primary recommendation" in alternative.casefold()
+
+
+def test_mobile_shell_spacing_contract_is_centralised() -> None:
+    """The shell band is one contract: tokens -> viewport reservation -> navigation."""
+    import styles
+
+    css = styles.SHELL_CSS
+    for token in styles.SHELL_TOKENS:
+        assert f"{token}:" in css, token
+    # the scrolling viewport reserves the navigation band instead of the page
+    # adding document-end padding
+    assert 'height: calc(100dvh - var(--ara-shell-bottom)) !important' in css
+    assert '[data-testid="stMain"]' in css and '[data-testid="stAppScrollToBottomContainer"]' in css
+    # safe area is read from the browser, with a non-zero floor for browsers
+    # that report no inset at all
+    assert "env(safe-area-inset-bottom, 0px)" in css
+    assert "max(var(--ara-safe-bottom), var(--ara-shell-floor))" in css
+    # the legacy hard-coded document-end offset must not come back
+    assert "6.6rem" not in css and "5.2rem" not in css
+    assert styles.SHELL_TOKENS["--ara-nav-h"] == "calc(var(--ara-nav-content-h) + var(--ara-shell-inset))"
+
+
+def test_mobile_shell_hides_chrome_with_installed_streamlit_testids() -> None:
+    """Streamlit 1.56 renamed the collapse control; the hide list must track it."""
+    import styles
+
+    css = styles.SHELL_CSS
+    for selector in styles.MOBILE_HIDDEN_CHROME_SELECTORS:
+        assert selector in css, selector
+    assert '[data-testid="stExpandSidebarButton"]' in styles.MOBILE_HIDDEN_CHROME_SELECTORS
+    assert '[data-testid="stSidebarCollapsedControl"]' in styles.MOBILE_HIDDEN_CHROME_SELECTORS
+    assert '[data-testid="stAppDeployButton"]' in styles.MOBILE_HIDDEN_CHROME_SELECTORS
+    assert '[data-testid="stMainMenu"]' in styles.MOBILE_HIDDEN_CHROME_SELECTORS
+    # the compact navigation is hidden outside the mobile shell, so desktop
+    # keeps the sidebar-only layout
+    hidden_by_default = css.split("@media")[0]
+    assert ".st-key-mobile_bottom_nav, .st-key-mobile_utility_nav { display: none; }" in hidden_by_default
+    # internal plumbing (stylesheet + storage bridge + shell bridge) is hidden
+    assert ".st-key-ara_stylesheet" in css
+    assert ".st-key-browser_storage_bridge" in css
+    assert ".st-key-mobile_shell_viewport" in css
+
+
+def test_mobile_bottom_navigation_renders_primary_destinations_and_navigates() -> None:
+    from streamlit.testing.v1 import AppTest
+
+    dashboard = AppTest.from_file("app.py").run(timeout=30)
+    assert not dashboard.exception
+    keys = {button.key for button in dashboard.button}
+    for page in ("Today", "Check-in", "Train", "Trends", "Coach"):
+        assert f"mobile_nav_{page}" in keys
+    assert dashboard.button(key="mobile_nav_Today").proto.type == "primary"
+    dashboard.button(key="mobile_nav_Train").click().run()
+    assert dashboard.session_state["current_page"] == "Train"
+    assert dashboard.button(key="mobile_nav_Train").proto.type == "primary"
+    assert dashboard.button(key="mobile_nav_Today").proto.type == "secondary"
+
+
+def test_mobile_shell_viewport_bridge_cannot_trigger_reruns() -> None:
+    """The bridge only adjusts browser-level shell concerns and returns nothing."""
+    import mobile_shell
+
+    script = Path("mobile_shell/frontend/shell.js").read_text(encoding="utf-8")
+    assert "viewport-fit=cover" in script
+    assert "visualViewport" in script and "ara-keyboard-open" in script
+    assert "streamlit:setFrameHeight" in script
+    assert "streamlit:setComponentValue" not in script
+    assert mobile_shell.SHELL_ELEMENT_KEY == "mobile_shell_viewport"
+    component_dir = Path(mobile_shell.__file__).parent / "frontend"
+    assert (component_dir / "index.html").exists() and (component_dir / "shell.js").exists()
+    source = Path("app.py").read_text(encoding="utf-8")
+    assert "mobile_shell_bridge()" in source
+
+
+def test_browser_storage_bridge_has_no_visible_surface() -> None:
+    """IndexedDB sync must stay functional but visually invisible."""
+    storage_js = Path("browser_storage/frontend/storage.js").read_text(encoding="utf-8")
+    index_html = Path("browser_storage/frontend/index.html").read_text(encoding="utf-8")
+    assert '"streamlit:setFrameHeight", {height: 0}' in storage_js
+    assert "height: 24" not in storage_js
+    assert "indexedDB.open" in storage_js  # semantics untouched
+    assert 'id="status"' in index_html
+    assert "clip:rect(0 0 0 0)" in index_html
+    assert "font:12px sans-serif" not in index_html
