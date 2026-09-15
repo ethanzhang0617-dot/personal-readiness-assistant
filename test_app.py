@@ -8,6 +8,7 @@ from pathlib import Path
 import json
 
 import ai_engine
+import ai_facts
 from ai_engine import DEFAULT_EMBEDDED_MODEL, get_ai_response, get_instant_response
 from app import real_today_inputs, scenario_values, validate_uploaded_csv
 from demo_data import build_demo_profiles
@@ -455,10 +456,16 @@ def test_decision_trace_uses_explicit_recent_training_summary() -> None:
 
 
 def test_ai_weekly_sets_answer_uses_recorded_exposure() -> None:
+    import re
+
     profile = ethan(); rec = recommend_training(profile, assessment(GREEN), profile["training_history"])
     answer, _, _ = get_instant_response("How many back sets have I done this week?", profile, assessment(GREEN), rec)
     assert f"{rec['weekly_exposure']['Back']:g}" in answer
-    assert "effective back sets" in answer.casefold()
+    # PHASE 3.5: the answer must name the real unit and must never fall back to days.
+    assert "weighted working sets" in answer.casefold()
+    assert "back" in answer.casefold()
+    assert re.search(r"\d+(\.\d+)?\s*(day|days|session|sessions)\b", answer.casefold()) is None
+    assert "not days" in answer.casefold()
 
 
 def test_qwen_success_has_no_forced_recommendation_prefix(monkeypatch) -> None:
@@ -835,3 +842,252 @@ def test_design_system_has_no_new_runtime_dependency() -> None:
     assert preview.exists()
     app_source = Path("app.py").read_text(encoding="utf-8")
     assert "design_system_preview" not in app_source
+
+
+# --------------------------------------------------------------------------- #
+# PHASE 3.5 — AI Coach factual grounding (bug AI-01)
+# --------------------------------------------------------------------------- #
+
+
+def _coach_fixture(index: int = 0):
+    """A demo profile with its real assessment and recommendation."""
+    profile = build_demo_profiles()[index]
+    draft = json.loads(json.dumps(profile["history"][-1], default=str))
+    draft["date"] = date.today().isoformat()
+    real_assessment = assess_readiness(draft, profile["history"], profile["personal_sleep_need"], profile["assessments"])
+    rec = recommend_training(profile, real_assessment, profile["training_history"])
+    return profile, real_assessment, rec
+
+
+def _ask(question: str, profile, real_assessment, rec, history=()):
+    answer, provider, _ = get_ai_response(question, profile, real_assessment, rec, history, {})
+    return answer, provider
+
+
+def test_ai_router_classifies_personal_fact_versus_other_intents() -> None:
+    profile, real_assessment, rec = _coach_fixture()
+    facts = ai_facts.build_personal_facts(profile, real_assessment, rec)
+
+    assert ai_facts.route_question("How much have I trained back this week?", (), facts).kind == "PERSONAL_FACT"
+    assert ai_facts.route_question("What's my readiness today?", (), facts).metric == "readiness"
+    assert ai_facts.route_question("What's my training load today?", (), facts).metric == "training_load"
+    assert ai_facts.route_question("How many days have I trained back this week?", (), facts).metric == "weekly_training_days"
+    assert ai_facts.route_question("Why am I training back today?", (), facts).kind == "EXPLANATION"
+    assert ai_facts.route_question("What is RIR?", (), facts).kind == "GENERAL"
+    assert ai_facts.route_question("What is the capital of Japan?", (), facts).kind == "SCOPE"
+    assert ai_facts.route_question("How is my left knee feeling overall?", (), facts).kind == "UNRESOLVED_PERSONAL"
+
+    history = [{"role": "user", "content": "How much have I trained back this week?"},
+               {"role": "assistant", "content": "Ethan has trained back for 12 days this week."}]
+    correction = ai_facts.route_question("but one week has only 7 days", history, facts)
+    assert correction.kind == "CORRECTION"
+    assert correction.previous_question == "How much have I trained back this week?"
+    # a challenge without a previous assistant turn is not a correction
+    assert ai_facts.route_question("but one week has only 7 days", (), facts).kind != "CORRECTION"
+
+
+def test_ai_case_1_and_2_weekly_exposure_uses_real_unit() -> None:
+    import re
+
+    profile, real_assessment, rec = _coach_fixture()
+    back = rec["weekly_exposure"]["Back"]
+    for question in ("How much have I trained back this week?", "How many sets have I done for back this week?"):
+        answer, provider = _ask(question, profile, real_assessment, rec)
+        assert provider == "Verified data"
+        assert f"{back:g}" in answer
+        assert "weighted working set" in answer.casefold()
+        assert re.search(r"\d+(\.\d+)?\s*(day|days)\b", answer.casefold()) is None
+        assert re.search(r"\bdays?\b", answer.casefold()) is None or "not days" in answer.casefold()
+
+
+def test_ai_case_3_training_days_is_not_exposure() -> None:
+    import re
+
+    profile, real_assessment, rec = _coach_fixture()
+    facts = ai_facts.build_personal_facts(profile, real_assessment, rec)
+    answer, provider = _ask("How many days have I trained back this week?", profile, real_assessment, rec)
+    assert provider == "Verified data"
+    exposure = rec["weekly_exposure"]["Back"]
+    # the set count must never be reported as days
+    assert re.search(rf"{exposure:g}\s*days?", answer.casefold()) is None
+    days = facts["weekly_training_days"]["value"]
+    if days:
+        assert str(days) in answer and "training day" in answer.casefold()
+    else:
+        assert "no completed sessions" in answer.casefold()
+
+
+def test_ai_case_4_and_5_training_load_versus_session_duration() -> None:
+    profile, real_assessment, rec = _coach_fixture()
+    load_answer, _ = _ask("What's my training load today?", profile, real_assessment, rec)
+    load = real_assessment["measurements"]["training_load"]["recent_7d_mean"]
+    assert f"{load:g}" in load_answer
+    assert "au" in load_answer.casefold()
+    assert "duration x session rpe" in load_answer.casefold()
+    assert rec["duration"] not in load_answer
+
+    duration_answer, _ = _ask("How long should I train today?", profile, real_assessment, rec)
+    assert rec["duration"] in duration_answer
+    assert "not training load" in duration_answer.casefold()
+
+
+def test_ai_case_6_and_7_readiness_and_recommendation() -> None:
+    profile, real_assessment, rec = _coach_fixture()
+    readiness_answer, _ = _ask("What's my readiness today?", profile, real_assessment, rec)
+    assert real_assessment["overall_readiness"] in readiness_answer
+    assert str(real_assessment["readiness_index"]) in readiness_answer
+    assert real_assessment["assessment_confidence"] in readiness_answer
+
+    workout_answer, _ = _ask("What am I training today?", profile, real_assessment, rec)
+    assert rec["primary"]["name"] in workout_answer
+    assert rec["intensity"] in workout_answer
+
+
+def test_ai_case_8_local_soreness_is_reported_or_declared_unavailable() -> None:
+    profile, real_assessment, rec = _coach_fixture()
+    answer, _ = _ask("How sore is my back today?", profile, real_assessment, rec)
+    recorded = (real_assessment.get("today_data") or {}).get("local_soreness") or {}
+    if "Back" in recorded:
+        assert f"{recorded['Back']}/5" in answer
+    else:
+        assert "no" in answer.casefold() and "recorded" in answer.casefold()
+        assert rec["primary"]["name"] not in answer  # must not fall back to the workout script
+
+
+def test_ai_case_9_correction_re_reads_source_of_truth() -> None:
+    profile, real_assessment, rec = _coach_fixture()
+    history = [{"role": "user", "content": "How much have I trained back this week?"},
+               {"role": "assistant", "content": "Ethan has trained back for 12 days this week."}]
+    answer, provider = _ask("but one week has only 7 days", profile, real_assessment, rec, history)
+    assert provider == "Verified data"
+    assert "you're right" in answer.casefold()
+    assert f"{rec['weekly_exposure']['Back']:g}" in answer
+    assert "weighted working set" in answer.casefold()
+    assert rec["duration"] not in answer          # never jump to 35-55 min
+    assert "training load" not in answer.casefold()  # never switch topic
+
+
+def test_ai_case_10_challenge_reconfirms_without_new_numbers() -> None:
+    import re
+
+    profile, real_assessment, rec = _coach_fixture()
+    history = [{"role": "user", "content": "How much have I trained back this week?"},
+               {"role": "assistant", "content": f"You have logged {rec['weekly_exposure']['Back']:g} weighted working sets for back this week."}]
+    answer, provider = _ask("Are you sure?", profile, real_assessment, rec, history)
+    assert provider == "Verified data"
+    assert "re-checked" in answer.casefold()
+    numbers = set(re.findall(r"\d+(?:\.\d+)?", answer))
+    facts = ai_facts.build_personal_facts(profile, real_assessment, rec)
+    assert numbers <= ai_facts.facts_numbers(facts)
+
+
+def test_ai_correction_of_a_correct_answer_does_not_claim_an_error() -> None:
+    """A negation ("not minutes") is not unit contamination."""
+    profile, real_assessment, rec = _coach_fixture()
+    facts = ai_facts.build_personal_facts(profile, real_assessment, rec)
+    load_route = ai_facts.Route("PERSONAL_FACT", metric="training_load")
+    correct = ai_facts.grounded_answer(load_route, facts)
+    answer = ai_facts.correction_answer(load_route, facts, correct)
+    assert "re-checked" in answer.casefold()
+    assert "you're right" not in answer.casefold()
+    assert "wrong unit" not in answer.casefold()
+
+    exposure_route = ai_facts.Route("PERSONAL_FACT", metric="weekly_exposure", groups=("Back",))
+    wrong = "Ethan has trained back for 12 days this week."
+    corrected = ai_facts.correction_answer(exposure_route, facts, wrong)
+    assert "you're right" in corrected.casefold()
+    assert "weighted working set" in corrected.casefold()
+
+
+def test_ai_case_11_missing_data_is_declared_not_invented() -> None:
+    profile = create_profile(Runtime(profiles=[], active_profile_id="", chat_notice=None), {"name": "Empty Local"})
+    empty_assessment = assessment(GREEN, today_data={"soreness": None, "local_soreness": {}})
+    rec = recommend_training(profile, empty_assessment, profile["training_history"])
+    assert not profile["training_history"]
+    answer, provider = _ask("How much have I trained back this week?", profile, empty_assessment, rec)
+    assert provider == "Verified data"
+    assert "don't have enough recorded" in answer.casefold()
+    assert "12" not in answer
+
+
+def test_ai_case_12_unit_contamination_is_blocked_by_the_guard() -> None:
+    profile, real_assessment, rec = _coach_fixture()
+    facts = ai_facts.build_personal_facts(profile, real_assessment, rec)
+    exposure_route = ai_facts.Route("PERSONAL_FACT", metric="weekly_exposure")
+    days_route = ai_facts.Route("PERSONAL_FACT", metric="weekly_training_days")
+    duration_route = ai_facts.Route("PERSONAL_FACT", metric="session_duration")
+    load_route = ai_facts.Route("PERSONAL_FACT", metric="training_load")
+    explanation_route = ai_facts.Route("EXPLANATION")
+    # sets expressed as days, days expressed as sets
+    assert not ai_facts.guard_llm_response("You trained back for 9.5 days this week.", facts, "", exposure_route)[0]
+    assert not ai_facts.guard_llm_response("You completed 4 sets of training this week.", facts, "", days_route)[0]
+    # duration expressed as training load and the reverse
+    assert not ai_facts.guard_llm_response("Your training load is 35-55 minutes.", facts, "", duration_route)[0]
+    assert not ai_facts.guard_llm_response("Your training load today is 45 minutes.", facts, "", load_route)[0]
+    # invented number in an explanation
+    assert not ai_facts.guard_llm_response("Your readiness index is 99 today.", facts, "", explanation_route)[0]
+    # period shift
+    assert not ai_facts.guard_llm_response("Your average load over the last month is fine.", facts, "", explanation_route)[0]
+    # a supported paraphrase is still accepted
+    assert ai_facts.guard_llm_response("Your back exposure this week is a weighted working-set estimate.", facts, "", exposure_route)[0]
+
+
+def test_ai_case_13_multiple_muscles_read_their_own_source_values() -> None:
+    profile, real_assessment, rec = _coach_fixture()
+    for muscle in ("Back", "Chest", "Quads"):
+        answer, _ = _ask(f"How many sets have I done for {muscle.lower()} this week?", profile, real_assessment, rec)
+        assert f"{rec['weekly_exposure'][muscle]:g}" in answer
+
+
+def test_ai_case_14_profile_isolation_has_no_stale_context() -> None:
+    first_profile, first_assessment, first_rec = _coach_fixture(0)
+    second_profile, second_assessment, second_rec = _coach_fixture(1)
+    assert first_rec["weekly_exposure"]["Back"] != second_rec["weekly_exposure"]["Back"] or first_profile["name"] != second_profile["name"]
+    first_answer, _ = _ask("How much have I trained back this week?", first_profile, first_assessment, first_rec)
+    second_answer, _ = _ask("How much have I trained back this week?", second_profile, second_assessment, second_rec)
+    assert f"{first_rec['weekly_exposure']['Back']:g}" in first_answer
+    assert f"{second_rec['weekly_exposure']['Back']:g}" in second_answer
+    assert first_answer != second_answer
+
+
+def test_ai_case_15_factual_query_survives_qwen_failure_and_never_calls_it(monkeypatch) -> None:
+    profile, real_assessment, rec = _coach_fixture()
+
+    def explode(*args, **kwargs):
+        raise AssertionError("The model must not be called for a personal factual query")
+
+    monkeypatch.setattr(ai_engine, "_generate", explode)
+    for question in ("How much have I trained back this week?", "What's my training load today?",
+                     "What's my readiness today?", "What am I training today?"):
+        answer, provider, _ = get_ai_response(question, profile, real_assessment, rec, [], {})
+        assert provider == "Verified data"
+        assert answer
+
+    # the same queries also work when the deployment disables the embedded model
+    answer, provider, _ = get_ai_response("How much have I trained back this week?", profile, real_assessment, rec, [], {"DISABLE_EMBEDDED_LLM": "true"})
+    assert provider == "Verified data"
+    assert f"{rec['weekly_exposure']['Back']:g}" in answer
+
+
+def test_ai_fact_prompt_never_exposes_bare_numbers() -> None:
+    profile, real_assessment, rec = _coach_fixture()
+    facts = ai_facts.build_personal_facts(profile, real_assessment, rec)
+    prompt = ai_facts.facts_for_prompt(facts)
+    # every exposure number carries its unit
+    for group, entry in facts["weekly_exposure"]["groups"].items():
+        assert f"{group}: {entry['value']:g} weighted working sets" in prompt
+    # the ambiguous legacy line is gone and the units are called out explicitly
+    assert "Current seven-day exposure:" not in prompt
+    assert "NOT days and NOT sessions" in prompt
+    assert "training days" in prompt and "completed sessions" in prompt
+    assert "AU" in prompt and "Training load is NOT session duration" in prompt
+
+
+def test_ai_explanation_grounding_guard_rejects_invented_rationale() -> None:
+    profile, real_assessment, rec = _coach_fixture()
+    facts = ai_facts.build_personal_facts(profile, real_assessment, rec)
+    invented = "Ethan is training back because he wants to build up his core muscles, which helps with balance."
+    accepted, reason = ai_facts.guard_explanation_grounding(invented, facts)
+    assert not accepted and "rationale" in reason
+    grounded = f"{rec['primary']['name']} stays primary because readiness is {real_assessment['overall_readiness']} and weekly exposure drives the split."
+    assert ai_facts.guard_explanation_grounding(grounded, facts)[0]

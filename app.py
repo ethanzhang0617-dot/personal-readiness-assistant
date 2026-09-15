@@ -556,10 +556,13 @@ def render_coach(profile: dict[str, Any], assessment: dict[str, Any]) -> None:
     for index, message in enumerate(profile_chat_history(profile)):
         with st.chat_message(message["role"]):
             if message["role"] == "assistant":
-                label = "AI-ENHANCED EXPLANATION" if message.get("kind") == "enhanced" else "RULE-BASED FALLBACK"
+                provider = message.get("provider", "")
+                label = ("VERIFIED DATA" if provider.startswith("Verified")
+                         else "AI-ENHANCED EXPLANATION" if message.get("kind") == "enhanced"
+                         else "RULE-BASED FALLBACK")
                 st.caption(label + " · " + message.get("provider", ""))
             st.markdown(message["content"])
-            if message.get("kind") == "fallback":
+            if message.get("kind") == "fallback" and not str(message.get("provider", "")).startswith("Verified"):
                 st.caption("Rule-based fallback · The deterministic recommendation remains valid.")
     if question := st.chat_input("Ask about readiness, training, recovery, RIR, volume, or today's workout…"):
         _submit_question(question, profile, assessment, recommendation)

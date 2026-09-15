@@ -10,6 +10,7 @@ from typing import Any, Mapping, Sequence
 
 import streamlit as st
 
+import ai_facts
 from readiness_engine import STOP
 
 
@@ -21,6 +22,20 @@ _last_generation_seconds: float | None = None
 _model_load_seconds: float | None = None
 _generation_lock = threading.Lock()
 _diag: dict[str, Any] = {"model_requested": False, "model_downloaded": False, "tokenizer_loaded": False, "model_loaded": False, "generation_attempted": False, "generation_completed": False, "validation_accepted": False, "provider_used": "Rule-based fallback", "stage": None, "last_validation_reason": "Not requested"}
+
+#: The model may explain verified facts, never decide them. Personal factual
+#: questions never reach the model at all (see ai_facts.route_question).
+_SYSTEM_PROMPT = (
+    "You are a concise, context-aware training coach. You explain and discuss; the deterministic engines and the "
+    "verified structured personal facts decide. Rules you must follow: never invent personal metrics; never change a "
+    "recorded number; never change a unit; weekly exposure represents training-set exposure (weighted working sets), "
+    "not days trained and not sessions; session duration is not training load; training load and session duration are "
+    "different concepts; if a personal fact is not provided, say it is unavailable; do not infer missing personal "
+    "history; do not override or replace the deterministic primary recommendation; clearly distinguish a primary "
+    "recommendation from a rule-generated alternative. You may answer general training and recovery questions with "
+    "general sports-science knowledge when the question is not about the user's own recorded data. Do not diagnose "
+    "medical conditions, predict injury, or reveal hidden chain-of-thought."
+)
 
 
 def _setting(secrets: Mapping[str, Any] | None, name: str) -> str:
@@ -117,6 +132,16 @@ def rule_based_answer(question: str, profile: Mapping[str, Any], assessment: Map
         return f"Safety mode is active because you selected {flags}. Normal workout guidance is disabled: pause demanding training and seek appropriate assessment for acute or concerning symptoms."
     if any(term in q for term in ("chest pain", "fainting", "severe shortness", "acute injury", "fever", "neurological")):
         return "This Coach cannot assess serious symptoms. Stop demanding training and seek appropriate medical assessment; seek urgent local help if symptoms are severe or worsening."
+    # Personal facts are answered from the structured fact layer, never from keywords
+    # or model output (hotfix AI-01).
+    facts = ai_facts.build_personal_facts(profile, assessment, recommendation)
+    route = ai_facts.route_question(question, (), facts)
+    if route.kind == "PERSONAL_FACT":
+        return ai_facts.grounded_answer(route, facts)
+    if route.kind == "UNRESOLVED_PERSONAL":
+        return ai_facts.CLARIFICATION
+    if route.kind == "CORRECTION":
+        return ai_facts.correction_answer(None, facts, None)
     if "capital of japan" in q or "capital of" in q:
         return "This Coach is designed for training, readiness and recovery questions."
     if q.strip() in {"what is rir", "what's rir", "define rir"} or "what is rir" in q:
@@ -163,18 +188,17 @@ def get_instant_response(question: str, profile: Mapping[str, Any], assessment: 
 
 def _generate(question: str, profile: Mapping[str, Any], assessment: Mapping[str, Any], recommendation: Mapping[str, Any], model_id: str, history: Sequence[Mapping[str, str]] = ()) -> str:
     tokenizer, model = load_embedded_model(model_id)
-    facts = _recommendation_facts(recommendation)
-    system_prompt = ("You are a concise, context-aware training coach. Use personal context only when it is relevant to the user's question; do not force every answer to mention today's readiness or workout. You may answer general training and recovery questions using general fitness and sports-science knowledge. The structured personal context is the source of truth for recorded personal facts. Do not invent measurements, change recorded readiness, or silently replace the primary recommendation. Clearly distinguish a primary recommendation from an alternative. Do not diagnose medical conditions, predict injury, or reveal hidden chain-of-thought.")
-    domains = ", ".join(f"{key}: {value}" for key, value in assessment.get("domains", {}).items())
-    contributors = "; ".join(assessment.get("key_contributors", [])) or "None"
-    soreness = ", ".join(f"{key} {value}/5" for key, value in assessment.get("today_data", {}).get("local_soreness", {}).items()) or "Not reported"
-    context = (f"Profile: {profile['name']}; goal: {profile.get('training_goal', 'General Fitness')}; training level: {profile.get('training_level', 'Not recorded')}; preferred split: {profile.get('training_split_preference', 'No Preference')}; "
-               f"overall readiness: {assessment['overall_readiness']}; four domains: {domains}; contributors: {contributors}; baseline confidence: {assessment.get('assessment_confidence', 'Not available')}; today's local soreness: {soreness}. {facts}")
+    facts = ai_facts.build_personal_facts(profile, assessment, recommendation)
+    context = (f"Profile: {profile['name']}; goal: {profile.get('training_goal', 'General Fitness')}; "
+               f"training level: {profile.get('training_level', 'Not recorded')}; "
+               f"preferred split: {profile.get('training_split_preference', 'No Preference')}.\n"
+               + ai_facts.facts_for_prompt(facts))
+    system_prompt = _SYSTEM_PROMPT
     messages = [{"role": "system", "content": system_prompt}]
     for message in list(history)[-8:]:
         if message.get("role") in {"user", "assistant"}:
             messages.append({"role": message["role"], "content": str(message.get("content", ""))[:500]})
-    messages.append({"role": "user", "content": f"Verified personal context: {context}\nQuestion: {question}"})
+    messages.append({"role": "user", "content": f"Verified structured personal facts (the only permitted source of personal numbers):\n{context}\nQuestion: {question}"})
     if hasattr(tokenizer, "apply_chat_template"):
         inputs = tokenizer.apply_chat_template(messages, add_generation_prompt=True, tokenize=True, return_dict=True, return_tensors="pt")
     else:
@@ -191,8 +215,24 @@ def _generate(question: str, profile: Mapping[str, Any], assessment: Mapping[str
 
 def get_ai_response(question: str, profile: Mapping[str, Any], assessment: Mapping[str, Any], recommendation: Mapping[str, Any], history: Sequence[Mapping[str, str]] = (), secrets: Mapping[str, Any] | None = None) -> tuple[str, str, str | None]:
     """Answer contextually while deterministic engines retain decision authority."""
+    facts = ai_facts.build_personal_facts(profile, assessment, recommendation)
+    route = ai_facts.route_question(question, history, facts)
+    _diag["last_route"] = route.as_trace()
     if assessment["overall_readiness"] == STOP:
         return rule_based_answer(question, profile, assessment, recommendation), "Safety rule", None
+    if route.kind == "SAFETY":
+        return rule_based_answer(question, profile, assessment, recommendation), "Safety rule", None
+    if route.kind == "PERSONAL_FACT":
+        # Deterministic layer answers; the model is not consulted, so it cannot
+        # invent a number, unit or period for the user's own data.
+        return ai_facts.grounded_answer(route, facts), "Verified data", "Answered from your recorded data. No model wording was used."
+    if route.kind == "UNRESOLVED_PERSONAL":
+        return ai_facts.CLARIFICATION, "Verified data", "The question could not be mapped to a supported personal metric, so no model was used."
+    if route.kind == "CORRECTION":
+        previous_route = ai_facts.route_question(route.previous_question or "", (), facts)
+        previous_answer = next((str(message.get("content", "")) for message in reversed(list(history)) if message.get("role") == "assistant"), None)
+        answer = ai_facts.correction_answer(previous_route if previous_route.kind == "PERSONAL_FACT" else None, facts, previous_answer)
+        return answer, "Verified data", "Your previous answer was re-checked against your recorded data."
     if _is_true(_setting(secrets, "DISABLE_EMBEDDED_LLM")):
         return rule_based_answer(question, profile, assessment, recommendation), "Instant explanation", "The embedded AI is disabled for this deployment."
     try:
@@ -207,6 +247,10 @@ def get_ai_response(question: str, profile: Mapping[str, Any], assessment: Mappi
         _last_generation_seconds = time.monotonic() - started
         approved = recommendation["primary"]["name"]
         accepted, validation_reason = validate_llm_response(explanation, str(assessment["overall_readiness"]), approved, question, recommendation)
+        if accepted:
+            accepted, validation_reason = ai_facts.guard_llm_response(explanation, facts, question, route)
+        if accepted and route.kind == "EXPLANATION":
+            accepted, validation_reason = ai_facts.guard_explanation_grounding(explanation, facts)
         if not accepted:
             _diag["stage"] = "VALIDATION"
             _diag["last_validation_reason"] = validation_reason
