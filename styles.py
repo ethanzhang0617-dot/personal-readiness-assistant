@@ -210,6 +210,8 @@ APP_CSS = """
   .ara-training-meta span { display: inline-flex; padding: var(--ara-space-2xs) var(--ara-space-xs); border: 1px solid var(--ara-border); border-radius: var(--ara-radius-pill); font-size: var(--ara-font-chip); color: var(--ara-text-2); background: var(--ara-surface-2); }
   .ara-today-greeting { margin: var(--ara-space-2xs) 0 var(--ara-space-sm); }
   .ara-today-greeting span { color: var(--ara-text-muted); font-size: var(--ara-font-caption); font-weight: 700; letter-spacing: .12em; }
+  .ara-today-meta { display: flex; align-items: center; gap: var(--ara-space-xs); flex-wrap: wrap; }
+  .ara-today-meta .ara-badge { letter-spacing: .08em; }
   .ara-today-greeting h1 { margin: var(--ara-space-2xs) 0; }
   .ara-today-greeting p { color: var(--ara-text-2); margin: 0; }
   .ara-exercise-card { background: var(--ara-surface); border: 1px solid var(--ara-border); border-radius: var(--ara-radius-md); padding: var(--ara-space-md); margin: var(--ara-space-xs) 0; font-weight: 600; line-height: 1.5; }
@@ -258,6 +260,24 @@ APP_CSS = """
   .ara-trace-row__label { font-size: var(--ara-font-caption); font-weight: 700; letter-spacing: .08em; color: var(--ara-text-muted); text-transform: uppercase; }
   .ara-trace-row__value { font-size: var(--ara-font-body); color: var(--ara-text); }
   .ara-trace-row__note { font-size: var(--ara-font-body-sm); color: var(--ara-text-2); }
+
+  /* --------------------------------------------------- Today (PHASE 4) */
+  .ara-hero-badge { margin-top: var(--ara-space-2xs); }
+  .ara-fact-grid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: var(--ara-space-md); }
+  .ara-fact-row { display: flex; flex-direction: column; gap: var(--ara-space-2xs); padding-top: var(--ara-space-sm); margin-top: var(--ara-space-sm); border-top: 1px solid var(--ara-border); min-width: 0; }
+  .ara-fact-grid .ara-fact-row { padding-top: var(--ara-space-xs); margin-top: var(--ara-space-2xs); }
+  .ara-fact-label { font-size: var(--ara-font-caption); font-weight: 700; letter-spacing: .1em; color: var(--ara-text-muted); text-transform: uppercase; }
+  .ara-fact-value { font-size: var(--ara-font-title-lg); color: var(--ara-text); line-height: 1.2; }
+  .ara-fact-value--primary { font-size: var(--ara-font-title-xl); }
+  .ara-fact-meta { display: flex; gap: var(--ara-space-xs); flex-wrap: wrap; }
+  .ara-metric-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--ara-space-sm); }
+  .ara-why { display: flex; flex-direction: column; gap: var(--ara-space-md); }
+  .ara-why-group { display: flex; flex-direction: column; gap: var(--ara-space-2xs); }
+  .ara-why-list { margin: 0; padding-left: var(--ara-space-md); color: var(--ara-text-2); font-size: var(--ara-font-body); line-height: 1.45; }
+  .ara-why-list li { margin-bottom: var(--ara-space-2xs); }
+  @media (min-width: 769px) {
+    .ara-metric-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  }
 </style>
 """
 
@@ -348,6 +368,10 @@ SHELL_CSS = """
     .ara-mobile-hero { padding: var(--ara-space-md); gap: var(--ara-space-sm); align-items: flex-start; }
     .ara-mobile-hero h2 { font-size: var(--ara-font-hero-title-mobile); }
     .ara-readiness-number { font-size: var(--ara-font-hero-metric-mobile); }
+    .ara-fact-value { font-size: var(--ara-font-title); }
+    .ara-fact-value--primary { font-size: var(--ara-font-hero-title-mobile); }
+    .ara-fact-grid { gap: var(--ara-space-sm); }
+    .ara-fact-value--primary { overflow-wrap: anywhere; }
     .ara-training-summary { padding: var(--ara-space-md); }
     .ara-training-summary h2 { font-size: var(--ara-font-hero-title-mobile); }
     .ara-today-greeting h1 { font-size: var(--ara-font-page-title-mobile); }

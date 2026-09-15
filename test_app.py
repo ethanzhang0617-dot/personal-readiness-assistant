@@ -1091,3 +1091,136 @@ def test_ai_explanation_grounding_guard_rejects_invented_rationale() -> None:
     assert not accepted and "rationale" in reason
     grounded = f"{rec['primary']['name']} stays primary because readiness is {real_assessment['overall_readiness']} and weekly exposure drives the split."
     assert ai_facts.guard_explanation_grounding(grounded, facts)[0]
+
+
+# --------------------------------------------------------------------------- #
+# PHASE 4 — Today experience
+# --------------------------------------------------------------------------- #
+
+
+_TODAY_SCRIPT = """
+import json
+import streamlit as st
+import ai_facts
+from app import current_assessment, current_recommendation, get_draft, render_today
+from profile_store import get_profile, initialise_store
+
+initialise_store(st.session_state)
+profile = get_profile(st.session_state)
+assessment = current_assessment(profile)
+recommendation = current_recommendation(profile, assessment)
+render_today(profile, assessment)
+facts = ai_facts.build_personal_facts(profile, assessment, recommendation)
+payload = {
+    "primary": recommendation["primary"]["name"],
+    "training_type": recommendation["primary"]["training_type"],
+    "session_demand": recommendation["intensity"],
+    "duration": recommendation["duration"],
+    "decision_trace": {entry["step"]: entry["value"] for entry in recommendation["decision_trace"]},
+    "index": facts["readiness"]["index"],
+    "status": facts["readiness"]["status"],
+    "confidence": facts["readiness"]["confidence"],
+    "hrv": facts["signals"]["hrv"]["value"],
+    "rhr": facts["signals"]["resting_hr"]["value"],
+    "sleep": facts["signals"]["sleep"]["value"],
+    "load": facts["training_load"]["value"],
+    "profile": profile["name"],
+}
+st.markdown("EXPECTEDPAYLOAD" + json.dumps(payload))
+"""
+
+
+def _today_run():
+    """The real Today page plus the engine values it was rendered from."""
+    from streamlit.testing.v1 import AppTest
+
+    dashboard = AppTest.from_string(_TODAY_SCRIPT).run(timeout=60)
+    assert not dashboard.exception
+    blocks = [str(element.value) for element in dashboard.markdown]
+    payload_line = next(block for block in blocks if block.startswith("EXPECTEDPAYLOAD"))
+    payload = json.loads(payload_line.replace("EXPECTEDPAYLOAD", "", 1))
+    html = "\n".join(block for block in blocks if not block.startswith("EXPECTEDPAYLOAD"))
+    headings = [str(element.value) for element in dashboard.subheader]
+    return html, headings, payload
+
+
+def test_today_renders_primary_recommendation_and_session_demand() -> None:
+    html, headings, payload = _today_run()
+    assert "TODAY'S TRAINING" in html
+    assert "WHAT TO TRAIN" in html and "HOW HARD" in html
+    assert payload["primary"] in html
+    assert payload["duration"] in html
+    assert payload["session_demand"] in html
+    assert ai_engine._loaded_model_id is None       # opening Today must not load Qwen
+
+
+def test_today_shows_engine_session_demand_not_a_guess() -> None:
+    html, _, payload = _today_run()
+    assert payload["session_demand"] in html
+    assert payload["training_type"] in html
+    assert "HOW HARD" in html
+
+
+def test_today_factual_values_match_structured_facts() -> None:
+    html, _, payload = _today_run()
+    assert str(payload["index"]) in html
+    assert payload["status"] in html
+    assert payload["confidence"] in html
+    assert f"{payload['hrv']:.0f}" in html
+    assert f"{payload['rhr']:.0f}" in html
+    assert f"{payload['sleep']:.1f}" in html
+    assert f"{payload['load']:.0f}" in html
+    # no technical jargon on the main screen
+    for jargon in ("z-score", "LnRMSSD", "rolling SD", "21-day"):
+        assert jargon.casefold() not in html.casefold()
+
+
+def test_today_why_today_uses_deterministic_decision_trace() -> None:
+    html, headings, payload = _today_run()
+    assert "WHY TODAY?" in headings and "KEY SIGNALS" in headings
+    assert "TRAINING DIRECTION" in html and "SESSION DEMAND" in html
+    trace = payload["decision_trace"]
+    for step in ("WEEKLY EXPOSURE", "RECENT TRAINING", "PROGRAMME", "READINESS", "SESSION DEMAND"):
+        assert trace[step] in html, step
+
+
+def test_today_limited_and_missing_data_do_not_break_the_layout() -> None:
+    from streamlit.testing.v1 import AppTest
+
+    script = (
+        "import streamlit as st\n"
+        "from ui_components import mobile_readiness_hero, metric_tile, why_today\n"
+        "assessment = {'overall_readiness': 'INSUFFICIENT DATA', 'readiness_index': None,"
+        " 'assessment_confidence': 'INSUFFICIENT', 'domains': {'autonomic': 'INSUFFICIENT DATA'},"
+        " 'measurements': {'hrv': {'status': 'INSUFFICIENT DATA'}, 'rhr': {'status': 'INSUFFICIENT DATA'},"
+        " 'sleep_duration': {'status': 'INSUFFICIENT DATA'}, 'training_load': {'status': 'INSUFFICIENT DATA'}},"
+        " 'today_data': {}, 'key_contributors': [], 'safety_flags': [], 'why_this_status': []}\n"
+        "mobile_readiness_hero({'name': 'Fresh'}, assessment)\n"
+        "st.markdown(metric_tile('HRV', '—', context='Not recorded today'))\n"
+        "why_today([], [])\n"
+    )
+    app = AppTest.from_string(script).run(timeout=30)
+    assert not app.exception
+    html = "\n".join(str(element.value) for element in app.markdown)
+    assert "INSUFFICIENT" in html and "INDEX" in html   # badge + empty index, no fake value
+    assert "Not recorded today" in html
+
+
+def test_today_empty_local_profile_shows_onboarding_without_demo_values() -> None:
+    from streamlit.testing.v1 import AppTest
+
+    script = (
+        "import streamlit as st\n"
+        "from app import render_today\n"
+        "from profile_store import create_profile\n"
+        "state = type('S', (), {'profiles': [], 'active_profile_id': '', 'chat_notice': None})()\n"
+        "profile = create_profile(state, {'name': 'Fresh Local'})\n"
+        "render_today(profile, {'overall_readiness': 'INSUFFICIENT DATA', 'readiness_index': None})\n"
+    )
+    app = AppTest.from_string(script).run(timeout=30)
+    assert not app.exception
+    html = "\n".join(str(element.value) for element in app.markdown)
+    assert "Start with today" in html
+    assert any(button.label == "Complete your first check-in" for button in app.button)
+    assert "Back + Biceps" not in html     # no demo recommendation for a local profile
+    assert "90" not in html

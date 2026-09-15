@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from datetime import date, timedelta
+from html import escape
 import json
 import math
 from typing import Any
@@ -24,9 +25,9 @@ from readiness_engine import (AMBER, BASELINE_LIMITED_DAYS, BASELINE_NORMAL_DAYS
 from styles import inject_styles
 from science_content import EVIDENCE_LABELS, EVIDENCE_MAP, LIMITATIONS, READINESS_RULE_METADATA, RECOMMENDATION_RULE_METADATA, REFERENCES
 from training_recommendation_engine import MUSCLE_GROUPS, prescription_log_defaults, recommend_training, workout_template
-from ui_components import (PRIMARY_NAV_ITEMS, SECONDARY_NAV_ITEMS, callout, detail_row, domain_card, flow_card,
-                           mobile_readiness_hero, page_intro, primary_cta, readiness_hero, secondary_cta,
-                           training_summary)
+from ui_components import (PRIMARY_NAV_ITEMS, SECONDARY_NAV_ITEMS, callout, detail_row, flow_card, identity_badge,
+                           metric_grid, metric_tile, mobile_readiness_hero, page_intro, primary_cta, readiness_hero,
+                           secondary_cta, today_training_card, training_summary, why_today)
 from ui_components import mobile_bottom_nav_component, mobile_utility_nav_component
 
 
@@ -297,43 +298,83 @@ def render_today(profile: dict[str, Any], assessment: dict[str, Any]) -> None:
     if not profile.get("is_demo") and not profile.get("history"):
         st.markdown("<div class='ara-today-greeting'><span>PERSONAL READINESS</span><h1>Start with today’s check-in</h1><p>Record your first recovery signals to turn this space into a personal daily decision view.</p></div>", unsafe_allow_html=True)
         st.info("Your local profile starts empty by design. Nothing is inferred from the demo profile or sent to a server.")
-        if st.button("Complete your first check-in", key=f"first_checkin_{profile['user_id']}", type="primary", width="stretch"):
+        if primary_cta("Complete your first check-in", key=f"first_checkin_{profile['user_id']}"):
             go_to("Check-in")
         return
-    st.markdown(f"<div class='ara-today-greeting'><span>{date.today().strftime('%A, %d %B')}</span><h1>Good morning, {profile['name']}</h1><p>Your readiness and training direction for today.</p></div>", unsafe_allow_html=True)
+    identity = identity_badge(True) if profile.get("is_demo") else ""
+    st.markdown(
+        f"<div class='ara-today-greeting'><div class='ara-today-meta'><span>{date.today().strftime('%A, %d %B')}</span>{identity}</div>"
+        f"<h1>Good morning, {escape(profile['name'])}</h1></div>", unsafe_allow_html=True)
     if profile.get("is_demo"):
-        st.caption("DEMO PROFILE · Simulated data stays separate from My Local Data.")
+        st.caption("Simulated demo profile · separate from My Local Data.")
     elif assessment["data_sufficiency"] == INSUFFICIENT:
         st.info("No complete check-in is saved for today. Open Check-in to record today's real inputs; this page does not generate demo values for My Local Data.")
+
+    # 1. Readiness — the only question the hero answers is "how am I today?".
     mobile_readiness_hero(profile, assessment)
     if assessment["safety_flags"]:
         st.error("Safety check selected: " + ", ".join(assessment["safety_flags"]) + ". Pause demanding training and seek appropriate professional assessment for acute or concerning symptoms.")
-    domains, measures, today = assessment["domains"], assessment["measurements"], assessment["today_data"]
-    sleep_detail = "Not recorded today" if today.get("sleep_hours") is None else f"{today['sleep_hours']:.1f}h / {profile['personal_sleep_need']:.1f}h usual need"
-    details = ("Not enough stable personal data" if measures["hrv"]["z_score"] is None else f"HRV {measures['hrv']['z_score']:+.1f} SD", sleep_detail, "Not recorded today" if assessment["measurements"]["subjective_badness"] is None else ("Feeling stable" if domains["subjective"] == GREEN else "Self-reported recovery needs attention"), measures["training_load"]["detail"] if domains["training_load"] == INSUFFICIENT else ("Within your recent range" if domains["training_load"] == GREEN else "Above recent baseline"))
+
+    # 2. Today's training — WHAT to train and HOW HARD, with the primary action.
     recommendation = current_recommendation(profile, assessment)
     primary = recommendation["primary"]
-    training_summary(primary["name"], recommendation["intensity"], recommendation["duration"], primary["training_type"])
+    today_training_card(primary["name"], primary["training_type"], recommendation["intensity"], recommendation["duration"])
     if primary_cta("View workout", key=f"open_train_{profile['user_id']}"):
         go_to("Train")
+
+    # 3. Why today — deterministic decision trace, split into direction and demand.
     st.subheader("WHY TODAY?")
-    for reason in recommendation["rationale"][:3]:
-        st.markdown(f"- {reason}")
+    # Decision-trace step names are human readable ("WEEKLY EXPOSURE"); normalise
+    # so a rename cannot silently drop a factor from the explanation.
+    trace = {str(entry["step"]).replace("_", " ").strip().upper(): entry["value"] for entry in recommendation.get("decision_trace", [])}
+    direction = [f"{label}: {trace[step]}" for step, label in (
+        ("WEEKLY EXPOSURE", "Weekly exposure"),
+        ("RECENT TRAINING", "Recent training"),
+        ("PROGRAMME", "Programme"),
+    ) if trace.get(step)]
+    demand = [f"{label}: {trace[step]}" for step, label in (
+        ("READINESS", "Readiness"),
+        ("SESSION DEMAND", "Session demand"),
+    ) if trace.get(step)]
+    why_today(direction, demand)
     with st.expander("View full Decision Trace", expanded=False):
         for entry in recommendation["decision_trace"]:
             detail_row(entry["step"].replace("_", " ").title(), entry["value"], "")
         st.caption("Decision Trace shows product rules and factual inputs. It is not hidden model reasoning or a clinical recovery estimate.")
+
+    # 4. Key signals — a small set, with units and a labelled status, no z-scores.
+    domains, measures, today = assessment["domains"], assessment["measurements"], assessment["today_data"]
+    load_status = domains["training_load"]
+
+    def range_context(status: str, recorded: bool = True) -> str:
+        if not recorded:
+            return "Not recorded today"
+        return {"GREEN": "Within your usual range", "AMBER": "Slightly outside your usual range", "RED": "Below your usual range"}.get(status, "Insufficient personal data")
+
+    hrv_value, rhr_value, sleep_value = today.get("rmssd_ms"), today.get("resting_hr_bpm"), today.get("sleep_hours")
+    sleep_need = profile.get("personal_sleep_need")
+    tiles = [
+        metric_tile("HRV", "—" if hrv_value is None else f"{hrv_value:.0f}", unit="ms" if hrv_value is not None else None,
+                    context=range_context(measures["hrv"]["status"], hrv_value is not None), status=measures["hrv"]["status"]),
+        metric_tile("Resting HR", "—" if rhr_value is None else f"{rhr_value:.0f}", unit="bpm" if rhr_value is not None else None,
+                    context=range_context(measures["rhr"]["status"], rhr_value is not None), status=measures["rhr"]["status"]),
+        metric_tile("Sleep", "—" if sleep_value is None else f"{sleep_value:.1f}", unit="h" if sleep_value is not None else None,
+                    context=f"Usual need {sleep_need:.1f} h" if sleep_need else range_context(measures["sleep_duration"]["status"], sleep_value is not None),
+                    status=measures["sleep_duration"]["status"]),
+        metric_tile("Training load", "—" if measures["training_load"].get("recent_7d_mean") is None else f"{measures['training_load']['recent_7d_mean']:.0f}",
+                    unit="AU" if measures["training_load"].get("recent_7d_mean") is not None else None,
+                    context=range_context(load_status, measures["training_load"].get("recent_7d_mean") is not None), status=load_status),
+    ]
     st.subheader("KEY SIGNALS")
-    for column, title, status, detail in zip(st.columns(4), ("Autonomic", "Sleep & Recovery", "Subjective Wellness", "Training Load"), (domains["autonomic"], domains["sleep"], domains["subjective"], domains["training_load"]), details):
-        with column:
-            domain_card(title, status, detail)
+    metric_grid(tiles)
+
+    # 5. Deeper detail stays collapsed on the second screen.
     with st.expander("Readiness details"):
-        detail_row("Autonomic", domains["autonomic"], details[0])
-        detail_row("Sleep", domains["sleep"], details[1])
-        detail_row("Wellness", domains["subjective"], details[2])
-        detail_row("Training load", domains["training_load"], details[3])
-        for item in assessment["why_this_status"]:
-            st.markdown(f"- {item}")
+        detail_row("Autonomic", domains["autonomic"], range_context(domains["autonomic"], hrv_value is not None))
+        detail_row("Sleep", domains["sleep"], "Not recorded today" if sleep_value is None else f"{sleep_value:.1f} h / {sleep_need:.1f} h usual need")
+        detail_row("Wellness", domains["subjective"], "Not recorded today" if assessment["measurements"]["subjective_badness"] is None else ("Feeling stable" if domains["subjective"] == GREEN else "Self-reported recovery needs attention"))
+        detail_row("Training load", domains["training_load"], "Not enough completed sessions in the comparison window" if load_status == INSUFFICIENT else range_context(load_status))
+        st.caption("Technical readiness rationale (z-scores, baseline windows and engine wording) lives in Science & Logic, not on the daily decision screen.")
         st.download_button("Download assessment JSON", data=json.dumps({"assessment": assessment, "recommendation": recommendation}, indent=2), file_name=f"readiness-{profile['name'].lower()}-{assessment['assessment_date']}.json", mime="application/json")
 
 

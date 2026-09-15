@@ -589,3 +589,88 @@ rerun), browser-storage invisibility.
 Items deliberately **not** touched in Phase 2 (later phases): mobile profile switching, Check-in
 scale wording and length, Trends table clipping and timestamp formatting, HRV chart axis, Today /
 Train / Coach / More redesigns, design-system migration, `streamlit-shadcn-ui`, `streamlit-echarts`.
+
+---
+
+# PHASE 4 IMPLEMENTATION OUTCOME — Today
+
+**Commit:** `feat(today): improve daily decision dashboard`
+**Files:** `app.py` (Today renderer), `ui_components.py` (Today components + primitives),
+`styles.py` (Today blocks, tokens only), `test_app.py` (6 Today tests)
+
+## 18. Information architecture
+
+Today is organised as a **daily decision dashboard**, not a metrics dashboard:
+
+```
+Greeting (date · profile badge · name)
+  ↓
+Readiness hero        status badge · status label · one-line explanation · index · baseline confidence
+  ↓
+Today's Training      WHAT TO TRAIN | HOW HARD  +  primary CTA (View workout)
+  ↓
+WHY TODAY?            TRAINING DIRECTION (weekly exposure · recent training · programme)
+                      SESSION DEMAND (readiness · session demand)
+  ↓
+KEY SIGNALS           2×2 metric grid: HRV · Resting HR · Sleep · Training load
+  ↓
+Readiness details / full Decision Trace (collapsed) · assessment JSON download
+```
+
+Design-system adoption in this phase: `status_badge` (readiness + every metric tile),
+`confidence_label`, `context_chip`, `metric_tile` (4 signals in a real grid, not four stacked cards),
+`primary_cta`, `identity_badge`. New page components: `today_training_card`, `metric_grid`,
+`why_today`. `domain_card` is no longer used on Today (its four stacked cards duplicated the hero's
+status four times); it remains part of the design-system API.
+
+## 19. Before / after
+
+| Measurement | Before | After |
+|---|---|---|
+| 390×844 — Readiness hero visible | 100 % | 100 % |
+| 390×844 — Today's Training visible | 100 % | 100 % |
+| 390×844 — Primary CTA visible / hit test | 100 % / CTA | 100 % / CTA (CTA at y 632.7–680.7, navigation starts at 780 → 99 px clearance) |
+| 390×844 — "Why today" heading | 64 % | 100 % |
+| 390×844 — page scroll height | 1814 px | **1438 px** (−21 %) |
+| 375×812 — CTA visible / hit test | 100 % / CTA | 100 % / CTA |
+| Stacked domain cards on the main screen | 4 | 0 |
+| "Ready to train" repetitions in page text | 4 | **1** |
+| `metric_tile` count | 0 | 4 |
+| Status badges | 0 | 6 |
+| Horizontal overflow (all six viewports) | none | none |
+
+The first attempt at the new WHAT/HOW-HARD layout pushed the CTA below the fold at 375/390/393
+(CTA visible 0 %, centre hit test returned the navigation). The layout was corrected in the same
+phase — two-column fact grid plus an inline identity badge — and re-measured; the previous V1.0
+numbers above are the pre-Phase-4 baseline, the corrected result is what shipped.
+
+## 20. Wording / terminology decision (weekly exposure)
+
+The engine's exposure window is `weekly_training_exposure()`: completed sessions with
+`0 <= age < 7` days — **the last seven days including today**, not a calendar week. Today therefore
+labels it exactly as the engine does:
+
+> `Weekly exposure: Back 9.5/12 · below target`
+
+and never calls it a "calendar week". The window itself was not modified. The same wording is used
+by the Coach facts layer (`ai_facts.EXPOSURE_PERIOD`), so the product has one definition.
+
+## 21. Factual integrity and duplication
+
+* Every number on Today comes from `readiness_engine` / `training_recommendation_engine` output
+  (verified by a test that renders Today in the same session and compares the rendered values with
+  `ai_facts.build_personal_facts`).
+* The main screen no longer shows z-scores, LnRMSSD, rolling SD or "21-day" reference wording; the
+  technical rationale stays in Science & Logic and in the downloaded assessment JSON.
+* Duplicate status text was removed (hero badge/label once; metric tiles carry their own status).
+* No Qwen involvement on Today: opening the page does not load the embedded model (asserted in tests).
+
+## 22. Phase 4 verification boundaries
+
+| Item | Status |
+|---|---|
+| First-screen geometry, CTA hit test, overflow, shell contract at 6 viewports | **EMULATION PASS** (Chromium) |
+| Phase 2 mobile shell contract after the redesign | **PASS** (nav band 64 px, CTA overlap 0 px, no content behind nav, Coach composer gap 0.1 px, safe-area inset still live) |
+| Phase 3.5 coach grounding after the redesign | **PASS** (unchanged; re-verified end to end) |
+| Real iOS Safari / Android rendering | **REAL DEVICE NOT VERIFIED** |
+| 768×1024 Key Signals first-screen visibility | Still below the fold on that viewport (tablet is treated as the mobile shell); acceptable, Key Signals is a second-screen section |

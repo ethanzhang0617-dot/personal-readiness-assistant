@@ -41,6 +41,10 @@ STATUS_META = {
 #: label identical wherever it is shown.
 CONFIDENCE_LABELS = {"NORMAL": "Normal", "LIMITED": "Limited", "INSUFFICIENT": "Insufficient"}
 
+#: Short, screen-reader friendly word for a readiness status badge. The long
+#: engine strings (for example "STOP / PROFESSIONAL REVIEW") are not badge text.
+STATUS_WORDS = {GREEN: "GREEN", AMBER: "AMBER", RED: "RED", STOP: "STOP", INSUFFICIENT: "INSUFFICIENT DATA"}
+
 #: Primary mobile destinations. The component owns labels, icons and active
 #: state; ``styles.SHELL_CSS`` owns placement, height and safe-area spacing.
 PRIMARY_NAV_ITEMS: tuple[tuple[str, str], ...] = (("Today", "⌂"), ("Check-in", "✓"), ("Train", "↑"), ("Trends", "⌁"), ("Coach", "◌"))
@@ -59,6 +63,11 @@ def status_tone(status: str) -> str:
 
 def status_meta(status: str) -> tuple[str, str, str]:
     return STATUS_META.get(status, STATUS_META[INSUFFICIENT])
+
+
+def status_word(status: str) -> str:
+    """Badge-sized word for a readiness status (never colour alone)."""
+    return STATUS_WORDS.get(status, STATUS_WORDS[INSUFFICIENT])
 
 
 def confidence_label(value: Any) -> str:
@@ -216,19 +225,67 @@ def readiness_hero(profile: dict[str, Any], assessment: dict[str, Any], greeting
 
 
 def mobile_readiness_hero(profile: dict[str, Any], assessment: dict[str, Any]) -> None:
-    """A presentation-only readiness summary; all values come from the engine."""
-    tone, label, explanation = status_meta(assessment["overall_readiness"])
+    """Readiness hero: status, index, one-line explanation, baseline confidence.
+
+    Deliberately carries no other metric. Everything else on Today is secondary.
+    """
+    status = assessment["overall_readiness"]
+    tone, label, explanation = status_meta(status)
     index = assessment["readiness_index"]
     index_text = "—" if index is None else str(index)
-    confidence = escape(str(assessment.get("assessment_confidence", "INSUFFICIENT")))
+    confidence = confidence_label(assessment.get("assessment_confidence", "INSUFFICIENT"))
     st.markdown(
         f"<section class='ara-mobile-hero' style='--status:{tone}'>"
         f"<div><div class='ara-kicker'>TODAY'S READINESS</div>"
-        f"<div class='ara-status'><i class='ara-dot'></i>{escape(assessment['overall_readiness'])}</div>"
+        f"<div class='ara-hero-badge'>{status_badge(status, label=status_word(status))}</div>"
         f"<h2>{escape(label)}</h2><p>{escape(explanation)}</p>"
-        f"<div class='ara-meta'>Baseline confidence: <b>{confidence}</b></div></div>"
+        f"<div class='ara-meta'>{confidence}</div></div>"
         f"<div class='ara-readiness-number'>{index_text}<span>INDEX</span></div>"
         "</section>", unsafe_allow_html=True,
+    )
+
+
+def today_training_card(training_name: str, training_type: str, session_demand: str, duration: str) -> None:
+    """Today's Training: WHAT to train and HOW HARD, as two labelled facts."""
+    st.markdown(
+        "<section class='ara-training-summary'>"
+        "<div class='ara-kicker'>TODAY'S TRAINING</div>"
+        "<div class='ara-fact-grid'>"
+        "<div class='ara-fact-row'>"
+        "<div class='ara-fact-label'>WHAT TO TRAIN</div>"
+        f"<div class='ara-fact-value ara-fact-value--primary'>{escape(training_name)}</div>"
+        f"<div class='ara-fact-meta'>{context_chip(training_type)}</div>"
+        "</div>"
+        "<div class='ara-fact-row'>"
+        "<div class='ara-fact-label'>HOW HARD</div>"
+        f"<div class='ara-fact-value'>{escape(session_demand)}</div>"
+        f"<div class='ara-fact-meta'>{context_chip(duration)}</div>"
+        "</div>"
+        "</div>"
+        "</section>", unsafe_allow_html=True,
+    )
+
+
+def metric_grid(tiles: Sequence[str]) -> None:
+    """A compact labelled metric grid (two columns on phones, four on desktop).
+
+    Used instead of ``st.columns`` so the phone layout stays a real grid rather
+    than four full-width stacked cards.
+    """
+    st.markdown("<div class='ara-metric-grid'>" + "".join(tiles) + "</div>", unsafe_allow_html=True)
+
+
+def why_today(direction: Sequence[str], demand: Sequence[str]) -> None:
+    """Deterministic explanation: why this direction, and why this demand."""
+    def group(label: str, items: Sequence[str]) -> str:
+        if not items:
+            return ""
+        listed = "".join(f"<li>{escape(item)}</li>" for item in items)
+        return f"<div class='ara-why-group'><div class='ara-fact-label'>{escape(label)}</div><ul class='ara-why-list'>{listed}</ul></div>"
+
+    st.markdown(
+        "<section class='ara-why'>" + group("TRAINING DIRECTION", direction) + group("SESSION DEMAND", demand) + "</section>",
+        unsafe_allow_html=True,
     )
 
 
