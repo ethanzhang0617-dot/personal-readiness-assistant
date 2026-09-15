@@ -1,5 +1,11 @@
 # V1.1 AI Coach — Factual Grounding (hotfix AI-01)
 
+> **Historical phase record.** Written when the explanation model was the embedded
+> `Qwen/Qwen2.5-0.5B-Instruct`. The provider is now DeepSeek
+> (see `docs/V1_1_DEEPSEEK_MIGRATION.md`), so every mention of Qwen below describes the
+> state at the time of this hotfix. The routing, structured facts and guard contracts
+> documented here are still current.
+
 **Phase:** PHASE 3.5 — AI Coach Factual Grounding Hotfix
 **Severity:** HIGH — a wrong answer about the user's own recorded data destroys product credibility
 **Scope:** the Coach's factual layer. Readiness engine, recommendation engine, training-load

@@ -14,12 +14,15 @@
 | 项目 | 值 |
 |---|---|
 | Branch | `v1.1-productization` |
-| Latest product commit | `c41485d` `feat(coach): refine conversational interface` |
-| Handoff commit | 见本文件所在 commit（`docs: add codex project handoff`） |
-| Test baseline | `python -m pytest -v` → **114 passed** |
+| Latest product commit | `4f27d22` `feat(ai): migrate coach explanations to DeepSeek` |
+| 上一阶段 product commit | `c41485d` `feat(coach): refine conversational interface` |
+| Dependency cleanup commit | `fe732fc` `chore(ai): remove local qwen runtime dependencies` |
+| Handoff commit | 见本文件所在 commit（`docs: update ai provider and privacy disclosure`） |
+| Test baseline | `python -m pytest -v` → **127 passed** |
 | Compile | `python -m compileall .` → PASS |
 | GitHub remote (`origin`) | `https://github.com/ethanzhang0617-dot/personal-readiness-assistant.git` |
 | Tags | 仅 `v1.0.0`（V1.1 未打 tag、未发 Release） |
+| 未 push | 本阶段按要求未 push GitHub；本地领先 `origin/v1.1-productization` |
 
 # Current Architecture
 
@@ -33,14 +36,15 @@ Deterministic product logic
         ↓
 AI layer (explanation only)
   ai_facts.py   Personal Fact Router · Deterministic Fact Resolver · Grounding Guard
-  ai_engine.py  Qwen explanation layer · validation · deterministic fallback
+  ai_engine.py  DeepSeek explanation layer · validation · deterministic fallback
         ↓
 Storage
   demo profiles (demo_data.py) · local profile · browser IndexedDB (browser_storage/)
   Export / Import backup (local_data.py)
 ```
 
-**LLM 永远不是 source of truth。** 它只负责解释已经确定的结论。
+**LLM 永远不是 source of truth。** 它只负责解释已经确定的结论。解释层在 V1.1 DeepSeek migration
+中从本地 Qwen 换成 DeepSeek API（`deepseek-flash`、non-thinking）。Personal factual query 不调用任何模型。
 
 ## Repo Map（新会话快速定位）
 
@@ -50,7 +54,7 @@ Storage
 | `readiness_engine.py` | readiness domains、personal baseline、safety flags、readiness index、training load |
 | `training_recommendation_engine.py` | session 选择、weekly exposure、prescription、workout template、RIR 指导 |
 | `ai_facts.py` | 结构化事实层：unit registry、facts、intent router、grounded answer、纠正处理、grounding guard |
-| `ai_engine.py` | Qwen 载入与生成、校验、确定性 fallback、AI 诊断 |
+| `ai_engine.py` | DeepSeek provider（OpenAI-compatible chat completions）、请求构造、校验、确定性 fallback、AI 诊断 |
 | `ui_components.py` | 可复用组件：status badge、metric tile、recommendation card、decision trace row、Coach context/suggestions 等 |
 | `styles.py` | Design tokens（Python 单一来源）+ 页面 CSS + mobile shell CSS |
 | `mobile_shell/` | 浏览器层 bridge：`viewport-fit=cover`、键盘状态、Coach 进入时回顶 |
@@ -59,7 +63,8 @@ Storage
 | `demo_data.py` / `science_content.py` | 固定 Demo 数据集 / Science & Logic 文案与引用 |
 | `test_app.py` | 114 个 regression tests（唯一测试文件） |
 | `scripts/design_system_preview.py` | 开发用设计系统预览（不是产品页面） |
-| `docs/*.md` | baseline、UX audit、mobile shell、design system、AI grounding、本 handoff |
+| `scripts/deepseek_smoke.py` | 手工 live QA（唯一允许真实调用 API 的地方，不属于 pytest） |
+| `docs/*.md` | baseline、UX audit、mobile shell、design system、AI grounding、DeepSeek migration、本 handoff |
 
 # Readiness Engine
 
@@ -111,12 +116,42 @@ Decision Trace **不是** LLM chain-of-thought，也不是 debug log；它是产
 * **Personal factual queries** 走 `ai_facts.route_question()` → `grounded_answer()`，
   **完全不调用模型**，例如 `How much have I trained back this week?`、`What's my training load today?`、
   `What's my readiness today?`、`How many days have I trained back this week?`。
-* **Explanation / discussion questions**（Why / Explain / Can I train harder、RIR 等一般知识）可以走 Qwen，
+* **Explanation / discussion questions**（Why / Explain / Can I train harder、RIR 等一般知识）可以走 DeepSeek，
   经 `validate_llm_response()` + `guard_llm_response()` + `guard_explanation_grounding()` 后才展示，
   否则回退到确定性回答。
-* 模型：`Qwen/Qwen2.5-0.5B-Instruct`，built-in local inference（无 API key），`MAX_NEW_TOKENS = 110`，CPU。
-  可用 secrets 覆盖 `EMBEDDED_LLM_MODEL`，或用 `DISABLE_EMBEDDED_LLM=true` 强制关闭。
-* Qwen 仅在 Coach 真正需要生成回答时 lazy load；Today / Train / Check-in / Trends / More 不会加载模型。
+* 模型：`deepseek-flash`（non-thinking），OpenAI-compatible `POST https://api.deepseek.com/chat/completions`。
+  可用 secrets 覆盖 `DEEPSEEK_MODEL`、`DEEPSEEK_BASE_URL`，或用 `DISABLE_AI_COACH=true` 强制关闭
+  （旧键 `DISABLE_EMBEDDED_LLM` 仍被接受，向后兼容）。
+* 只有在 Coach 真正需要生成解释时才构造 provider 并发起请求；Today / Train / Check-in / Trends / More
+  不创建 AI client、不调用 API。Personal factual query 即使在 Coach 内也不调用。
+
+# AI Provider（V1.1 DeepSeek migration）
+
+| 项目 | 值 |
+|---|---|
+| Provider | DeepSeek（OpenAI-compatible chat completions） |
+| Model | `deepseek-flash`（UI 只显示 `AI explanation · DeepSeek`，不硬编码版本号） |
+| Thinking | 显式 `"thinking": {"type": "disabled"}`，不依赖默认值 |
+| Transport | `requests`（Streamlit 已有依赖）直接 POST，无 LangChain / LlamaIndex / agent framework |
+| API key | Streamlit secrets `DEEPSEEK_API_KEY` → 其次环境变量 `DEEPSEEK_API_KEY` |
+| Key 安全 | 不 hardcode、不 commit、不打印、不写 browser storage、不发前端；错误信息经 `_redact()` 过滤 `sk-*` |
+| 输出上限 | `MAX_OUTPUT_TOKENS = 400`；`REQUEST_TIMEOUT_SECONDS = 20.0` |
+| 请求体防护 | 不打印 provider body；HTTP 状态只保留状态码 |
+| 失败行为 | 缺 key / 401 / 429 / 5xx / timeout / 网络 / 非法或空响应 / 草稿被 guard 拒绝 → 确定性回答 + 用户可见提示，绝不 crash |
+| Diagnostics | 仅记录 token 计数与耗时；不持久化 prompt |
+
+上下文最小化：只发送 profile 基础字段（name / goal / level / split）+ `ai_facts.facts_for_prompt(facts)`
+（readiness、recommendation、7-day exposure、近期 sessions、soreness、signals、training load）+ 最近 8 条
+对话（每条截断 500 字符）。**不发送**完整 30+ 天原始记录、IndexedDB dump、backup、其他 profile 数据。
+
+隐私边界：用户保存的历史仍在浏览器 IndexedDB；只有当用户提出解释类问题时，摘要上下文与最近对话才发送给
+配置的 DeepSeek API。个人事实性问题零 provider 调用。
+
+回归契约（新增）：
+
+* `Why this workout?` 这类解释问题在缺 key、超时、provider 报错、响应非法时都必须回退到确定性回答。
+* `How much have I trained back this week?` 及所有 personal factual / correction 轮次对 provider 的调用数必须为 **0**。
+* 模型草稿若新增未记录数字、改单位、改周期、替换 primary recommendation 或编造 rationale，必须被 guard 拦截。
 
 # AI-01（历史关键 bug 与修复）
 
@@ -136,9 +171,10 @@ Decision Trace **不是** LLM chain-of-thought，也不是 debug log；它是产
 **SUGGESTED**（4 条会话起始行，`→` 前缀、左对齐、分隔线、44px 行高）→ `How the Coach works`（无边框 disclosure）→
 对话区 → **一体化 Composer**（圆角容器 + 内嵌炭黑发送键，移动端 44×44）。
 
-* 个人事实回答显示 **VERIFIED DATA** 微徽章；AI 解释显示的模型信息降级为小字元数据。
+* 个人事实回答显示 **VERIFIED DATA** 微徽章（该回答没有调用 DeepSeek）；AI 解释显示的 provider 信息
+  降级为小字元数据，形如 `AI explanation · DeepSeek`。
 * 进入 Coach 且对话为空时停留在页面顶部（不自动滚到底部）。
-* 最新 Coach visual patch commit：`c41485d`。
+* Coach 的 visual 结构未在 DeepSeek migration 中改动；只替换 provider metadata、spinner 文案与隐私披露。
 
 # Current UI（逐页现状）
 
@@ -187,11 +223,16 @@ Decision Trace **不是** LLM chain-of-thought，也不是 debug log；它是产
 
 # Test Baseline
 
-`python -m compileall .` → PASS；`python -m pytest -v` → **114 / 114 passed**。
+`python -m compileall .` → PASS；`python -m pytest -v` → **126 / 126 passed**。
 
 关键 regression 区域：mobile shell 间距契约与 chrome 选择器 · Today 首屏（Readiness / Training / Session Demand / CTA）·
 Train 的 primary 与 alternatives 层级 + 8 步 decision trace · 档案切换与 Demo/Local 隔离 · IndexedDB 写入/刷新/恢复 ·
-AI-01 事实性（CASE 1–15 + guard）· Coach 纠正与质疑 · 跨页术语 · Design System tokens 与状态语义。
+AI-01 事实性（CASE 1–15 + guard）· Coach 纠正与质疑 · 跨页术语 · Design System tokens 与状态语义 ·
+DeepSeek 请求构造与非 thinking 配置 · 缺 key / 超时 / 网络 / 401 / 429 / 5xx / 非法响应 fallback ·
+上下文最小化与 profile 隔离 · 事实性问题零 provider 调用 · 幻觉草稿被 guard 拦截。
+
+单元测试一律使用注入的 fake transport（`monkeypatch.setattr(ai_engine.requests, "post", ...)`），
+**不会真实调用 API**。真实调用只允许出现在 `scripts/deepseek_smoke.py` 的手工 QA 中。
 
 # Local Run
 
@@ -202,25 +243,32 @@ python -m streamlit run app.py
 # 开发用设计系统预览（不在产品导航内）
 python -m streamlit run scripts/design_system_preview.py
 
-# 可选：Qwen smoke check（需要本地已有模型缓存）
-python scripts/qwen_smoke.py
+# 可选：DeepSeek live smoke check（需要 DEEPSEEK_API_KEY，唯一允许真实调用 API 的地方）
+DEEPSEEK_API_KEY=... python scripts/deepseek_smoke.py
 
 # 变更前的基本验证
 python -m compileall .
 python -m pytest -v
 ```
 
-注意：Qwen 只有在 Coach 真正需要生成回答时才会 lazy load；若本机没有模型缓存，第一次提问会尝试下载。
-`DISABLE_EMBEDDED_LLM=true`（secrets 或环境变量）可强制使用确定性 fallback。
+注意：没有 `DEEPSEEK_API_KEY` 时 App 完全可用，解释类问题显示 *AI explanation is temporarily unavailable*
+并给出确定性回答。`DISABLE_AI_COACH=true`（secrets 或环境变量）可显式关闭解释层。
+runner 需要能访问 `https://api.deepseek.com`（当前开发机未做 live 验证，见 Known Limitations）。
 
 # Known Limitations（诚实清单）
 
 * **真机未验证**：iOS Safari / Android Chrome 上的安全区、键盘、动态工具栏行为仅通过 Chromium 仿真验证过。
 * **Streamlit Cloud 部署未验证**：本阶段没有做真实 Cloud 部署；`requirements.txt` 使用 `streamlit>=1.42,<2` 的宽范围，
-  云端可能解析到与本机 1.56 不同的版本，移动外壳选择器需要重新确认。
+  云端可能解析到与本机 1.56 不同的版本，移动外壳选择器需要重新确认。移除 torch/transformers 后
+  install 体积与启动时间应显著下降，但**本机没有做前后对比测量**，不要引用未测量数字。
 * **框架级视觉上限**：native slider / select 形态、次级控件尺寸、桌面端 Streamlit chrome、框架 spinner。
-* **解释类回答**：Qwen2.5-0.5B 经常被 grounding guard 拒绝并回退到确定性解释——这是有意的取舍（grounding > eloquence），
-  需要更强模型才能改善。
+* **DeepSeek live 调用未验证**：当前开发机没有 `DEEPSEEK_API_KEY`，因此 API 集成已实现但**未经真实 provider
+  调用验证**。响应延迟、真实 token 用量、`"thinking": {"type": "disabled"}` 是否被当前服务端接受、
+  以及 `deepseek-flash` alias 的可用性都尚未在真实端点上确认，需要配置 key 后用 `scripts/deepseek_smoke.py` 补验。
+* **解释类回答**：guard 优先于文采（grounding > eloquence）。度量上更强的模型（DeepSeek）应降低回退率，
+  但 guard 不会被削弱或删除；若真实 provider 的措辞频繁触发 guard，正确做法是调整 prompt，而不是放宽 guard。
+* **成本**：没有任何服务端配额或持久化计数。当前保护只有 bounded history、bounded output、context minimization
+  与"事实性问题零调用"；公开 demo 长期运行仍需要额外的配额方案。
 * **产品边界**：不是医疗设备，不做 fatigue / injury prediction，不提供 recovery percentage，不做诊断。
 
 # Visual Status
@@ -243,9 +291,14 @@ V1.1 已完成较完整的 visual polish（颜色角色、排版、卡片、间�
 9. GREEN / AMBER / RED / STOP 语义保持一致。
 10. Red 不是普通 CTA 颜色。
 11. Demo 与 Local profile 数据保持隔离。
-12. Today / Train / Trends / More 不得 lazy-load Qwen。
+12. Today / Train / Check-in / Trends / More 不得创建 AI client 或调用 DeepSeek API。
 13. UI 工作期间不得随意修改核心 engine。
 14. Decision Trace 是确定性解释，不是 AI chain-of-thought。
+15. Explanation provider 只能是 DeepSeek；**不允许** DeepSeek → Qwen → fallback 的多级回退，只能是
+    DeepSeek → deterministic fallback。
+16. DeepSeek API key 不得 hardcode / commit / 打印 / 写入 browser storage / 发往前端。
+17. 发送给 provider 的 personal context 必须是最小化摘要；不得发送完整原始历史、backup 或其他 profile 数据。
+18. guard（`validate_llm_response` / `guard_llm_response` / `guard_explanation_grounding`）不得因为模型更强而被删除或放宽。
 
 # Do Not Resurrect Without Explicit Decision
 
@@ -256,14 +309,20 @@ V1.1 已完成较完整的 visual polish（颜色角色、排版、卡片、间�
 * 不要让 LLM 成为 source of truth，也不要把 “AI 自动生成训练计划” 当作当前产品方向。
 * 不要为了让 demo 好看而修改 scientific thresholds。
 * 不要仅为引入 UI component library 而升级 Streamlit。
+* **不要把本地模型（Qwen / transformers / torch）重新加回 runtime**：解释层已迁移到 DeepSeek API，
+  本地推理路径已删除。若未来需要离线模型，必须作为显式的新决策重新评估，而不是"顺手加回来"。
+* 不要因为 DeepSeek 更强就删除或放宽 grounding guard，也不要让 provider 成为 source of truth。
+* 不要在 pytest 中调用真实 DeepSeek API。
 
 # Product Roadmap
 
 **CURRENT — V1.1**
 Explainable Daily Training Decision；high-fidelity Streamlit functional prototype。
 
-**NEXT TECHNICAL STEP — DeepSeek migration（尚未开始）**
-目标是提升 explanation quality；必须保留 deterministic decision engine、Personal Fact Resolver、Grounding Guard。
+**DONE — V1.1 DeepSeek migration**
+解释层已从本地 Qwen 迁移到 DeepSeek API（non-thinking）。deterministic decision engine、
+Personal Fact Resolver、Grounding Guard 全部保留。详见 `docs/V1_1_DEEPSEEK_MIGRATION.md`。
+**尚未做的是 live 验证**：需要配置 `DEEPSEEK_API_KEY` 后用 `scripts/deepseek_smoke.py` 补一次真实调用 QA。
 
 **FUTURE PRODUCT STEP — V1.2 Adaptive Decision Loop（尚未实现）**
 Post-session feedback · Actual session response · Personal Response Profile · Recommendation Confidence ·
@@ -299,6 +358,6 @@ Apple Health / Garmin / WHOOP / Oura 属于后期数据入口，核心价值是*
 5. 确认最新 baseline（branch / commit / tests）。
 6. `python -m compileall .`
 7. `python -m pytest -v`
-8. 确认 test baseline（当前应为 114 passed）。
+8. 确认 test baseline（当前应为 126 passed）。
 9. **不要修改任何代码。**
 10. 先汇报理解，然后等待用户的下一条指令。

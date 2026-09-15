@@ -1,5 +1,9 @@
 # V1.1 Baseline Report
 
+> **Historical phase record.** This is the Phase 1 snapshot taken before the productization
+> changes. Its dependency list still shows `transformers`/`torch`; those were removed from
+> `requirements.txt` by the DeepSeek migration (`docs/V1_1_DEEPSEEK_MIGRATION.md`).
+
 **Release under work:** Personal Readiness Assistant V1.1.0 — Productization & Experience Release
 **Baseline version:** V1.0.0 (tag `v1.0.0`)
 **Report date:** 2026-09-16

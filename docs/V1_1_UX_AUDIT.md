@@ -1,5 +1,9 @@
 # V1.1 UX Audit (V1.0 baseline, real-browser)
 
+> **Historical phase record.** This audit was run against the build whose Coach used the embedded
+> Qwen model. The layout and interaction findings still apply; statements about the AI provider do
+> not (see `docs/V1_1_DEEPSEEK_MIGRATION.md`).
+
 **Audited build:** V1.0.0 `fe09ab6` (branch `v1.1-productization`, no product code modified)
 **Audit date:** 2026-09-16
 **Method:** the real Streamlit app served locally (`python -m streamlit run app.py`), driven by
