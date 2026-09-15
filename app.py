@@ -13,7 +13,7 @@ import pandas as pd
 import streamlit as st
 import altair as alt
 
-from ai_engine import ai_diagnostics, ai_engine_status, get_ai_response, get_instant_response
+from ai_engine import AI_PROVIDER_LABEL, ai_diagnostics, ai_engine_status, get_ai_response, get_instant_response
 import styles
 from browser_storage import browser_storage_bridge
 from local_data import (LocalDataError, clear_local_runtime, export_backup, hydrate_runtime_state, import_backup,
@@ -736,7 +736,7 @@ def _submit_question(question: str, profile: dict[str, Any], assessment: dict[st
     if provider == "Instant explanation":
         answer = canonical
         provider = "Rule-based fallback"
-    messages.append({"role": "assistant", "content": answer, "provider": provider, "source_question": question, "kind": "enhanced" if provider.startswith("Built-in") else "fallback", "ai_requested": True})
+    messages.append({"role": "assistant", "content": answer, "provider": provider, "source_question": question, "kind": "enhanced" if provider == AI_PROVIDER_LABEL else "fallback", "ai_requested": True})
     if len(messages) > 30:
         del messages[:-30]
     _queue_chat_save(profile)
@@ -746,7 +746,7 @@ def _submit_question(question: str, profile: dict[str, Any], assessment: dict[st
 def _enhance_question(index: int, profile: dict[str, Any], assessment: dict[str, Any], recommendation: dict[str, Any]) -> None:
     message = profile_chat_history(profile)[index]
     message["ai_requested"] = True
-    with st.spinner("Preparing the embedded open-source model. First use may take a little longer."):
+    with st.spinner("Thinking about your training context…"):
         answer, provider, notice = get_ai_response(message["source_question"], profile, assessment, recommendation, profile_chat_history(profile)[:index], st.secrets)
     if provider in {"Instant explanation", "Safety rule"}:
         message["ai_unavailable"] = True
@@ -768,6 +768,8 @@ def render_coach(profile: dict[str, Any], assessment: dict[str, Any]) -> None:
             with st.expander("How the Coach works"):
                 st.write("This is the Context-aware Training Coach. The Coach can answer general training and recovery questions and explains your readiness, today's session and recent training.")
                 st.write("Readiness and the primary recommendation come from the deterministic engines, and personal facts are verified from your structured recorded data. The AI explains that context; it does not choose or replace a workout.")
+                st.write(f"Explanation questions are answered by the {AI_PROVIDER_LABEL} API. Questions about your own recorded numbers are answered directly from your verified data and are labelled VERIFIED DATA — those answers never call the AI provider.")
+                st.caption(f"When you ask an explanation question, a summarised context and your recent Coach messages are sent to the configured {AI_PROVIDER_LABEL} API to generate the reply. Your saved history stays in this browser.")
         if st.session_state.get("chat_notice"):
             st.caption(st.session_state.chat_notice)
         for message in history:
@@ -794,7 +796,7 @@ def render_more(profile: dict[str, Any]) -> None:
     page_intro("SETTINGS", "More", "Profile, local data controls, disclosure and product information.")
     profile_switcher(profile)
     if not profile.get("is_demo"):
-        callout("LOCAL BROWSER STORAGE", "Saved personal history is stored locally in this browser on this device. This prototype does not persist personal history to a remote personal database.")
+        callout("LOCAL BROWSER STORAGE", f"Saved personal history is stored in this browser on this device, and this prototype does not persist personal history to a remote personal database. AI Coach explanations send a summarised context and your recent Coach messages to the configured {AI_PROVIDER_LABEL} API; your questions about your own recorded numbers never leave the deterministic layer.")
     with st.container(key="settings_rows"):
         if secondary_cta("Training goal, split, sleep need and weekly targets", key="more_profile"):
             go_to("Profile")
@@ -969,12 +971,15 @@ def render_about(profile: dict[str, Any], assessment: dict[str, Any]) -> None:
     st.subheader("Safety and scope")
     st.warning("Workout recommendations are heuristic decision-support suggestions based on readiness, recent training history, reported soreness and goals. They are not clinically validated prescriptions, medical advice, injury prediction or a measurement of muscle recovery.")
     st.subheader("AI architecture")
-    st.write("Readiness and workout recommendations are deterministic, transparent rules. Qwen2.5-0.5B is optional and supports context-aware training conversation after a Coach question. It runs with the application, uses no commercial AI API or API key, and cannot alter the stored readiness or deterministic primary recommendation.")
+    st.write(f"Readiness and workout recommendations are deterministic, transparent rules. The AI Coach explanation layer is an optional {AI_PROVIDER_LABEL} API integration: it turns an already-decided recommendation into natural language and cannot alter the stored readiness or the deterministic primary recommendation.")
+    st.write("Questions about your own recorded numbers are answered from verifiable structured facts without calling the AI provider. Personal factual answers are labelled VERIFIED DATA; only explanation, discussion and general training questions are sent to the provider.")
+    st.write("If no API key is configured, or the provider is unavailable, the product shows a deterministic rule-based answer instead. Nothing in Today, Train, Check-in, Trends or More depends on the AI provider.")
     st.subheader("Data & Privacy")
-    callout("YOUR DATA STAYS LOCAL", "Your saved personal readiness, check-in and training-history data are stored only in your local browser on this device.")
-    st.write("This prototype does not persist personal history to a remote database. Data required for readiness, recommendations and AI responses may be temporarily processed by the running application, but it is not intentionally written to a remote personal-history database.")
+    callout("YOUR SAVED HISTORY STAYS IN THIS BROWSER", "Your saved personal readiness, check-in and training-history data are stored in your local browser on this device.")
+    st.write(f"When you use AI Coach, relevant summarised context (your goal and split, today's readiness, today's recommendation, recent training summary, local soreness and your recent Coach messages) may be sent to the configured {AI_PROVIDER_LABEL} API to generate the response. Only relevant summaries are sent — not your full history, not your browser backup, and not another profile's data.")
+    st.write("This prototype does not persist personal history to a remote personal-history database. Data required for readiness and recommendations is processed by the running application on the server that hosts it, and is not intentionally written to a remote personal-history database.")
     st.write("Local browser data is not automatically synchronized across browsers or devices. Clearing browser site data, using private browsing, or changing the application's origin/domain may make it unavailable. Export Backup is recommended if the history matters to you.")
-    st.caption("Personal history persistence: browser-local IndexedDB · AI inference: embedded model running with the application · Commercial AI API: none")
+    st.caption(f"Personal history persistence: browser-local IndexedDB · AI explanations: summarised context sent to the configured {AI_PROVIDER_LABEL} API · Personal factual answers: no AI provider call")
     with st.expander("Developer diagnostics"):
         st.json(ai_diagnostics(st.secrets))
     st.caption(f"Current walkthrough: {profile['name']} is {assessment['overall_readiness']} today. The engine does not expose private chain-of-thought; it exposes factual decision factors and rationale instead.")
@@ -986,6 +991,7 @@ def render_first_use_privacy_notice(profile: dict[str, Any]) -> None:
     with st.container(border=True):
         st.subheader("Your data stays in this browser")
         st.write("Your saved readiness, check-in and training-history data are stored locally in this browser on this device. This prototype does not use a remote database for persistent personal history.")
+        st.write(f"When you use AI Coach, a summarised training context and your recent Coach messages may be sent to the configured {AI_PROVIDER_LABEL} API to generate the reply. Questions about your own recorded numbers are answered from your verified data without an AI provider call.")
         st.caption("Your history will not automatically follow you to another browser or device. Clearing site data, using private/incognito mode, or changing browser/device may make it unavailable. Use Export My Data if you want to keep or transfer a copy.")
         if st.button("Got it", type="primary", key="acknowledge_privacy"):
             st.session_state.local_preferences["privacy_notice_acknowledged"] = True

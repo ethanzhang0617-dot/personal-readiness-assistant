@@ -1,41 +1,102 @@
-"""Optional local language layer. Product decisions remain deterministic."""
+"""Optional AI explanation layer. Product decisions remain deterministic.
+
+Provider: DeepSeek (OpenAI-compatible chat completions).
+
+This module only turns an already-decided outcome into natural language, and
+only for explanation / discussion / general-knowledge questions. Personal
+factual queries never reach a model: they are answered by ``ai_facts`` from the
+verified structured facts. Nothing here writes to the deterministic engines or
+changes a calculation.
+"""
 
 from __future__ import annotations
 
 import os
 import re
-import threading
 import time
-from typing import Any, Mapping, Sequence
+from typing import Any, Callable, Mapping, Sequence
 
-import streamlit as st
+import requests
 
 import ai_facts
 from readiness_engine import STOP
 
 
-DEFAULT_EMBEDDED_MODEL = "Qwen/Qwen2.5-0.5B-Instruct"
-MAX_NEW_TOKENS = 110
-_loaded_model_id: str | None = None
-_last_model_error: str | None = None
-_last_generation_seconds: float | None = None
-_model_load_seconds: float | None = None
-_generation_lock = threading.Lock()
-_diag: dict[str, Any] = {"model_requested": False, "model_downloaded": False, "tokenizer_loaded": False, "model_loaded": False, "generation_attempted": False, "generation_completed": False, "validation_accepted": False, "provider_used": "Rule-based fallback", "stage": None, "last_validation_reason": "Not requested"}
+# --------------------------------------------------------------------------- #
+# Provider configuration
+# --------------------------------------------------------------------------- #
+
+DEFAULT_DEEPSEEK_MODEL = "deepseek-flash"
+DEFAULT_DEEPSEEK_BASE_URL = "https://api.deepseek.com"
+CHAT_COMPLETIONS_PATH = "/chat/completions"
+
+#: Coach explanations are short, cheap and grounded. These bounds double as the
+#: cost guard: a bounded prompt plus a bounded completion per request.
+MAX_OUTPUT_TOKENS = 400
+REQUEST_TIMEOUT_SECONDS = 20.0
+MAX_HISTORY_MESSAGES = 8
+MAX_HISTORY_MESSAGE_CHARS = 500
+
+#: Provider labels surfaced to the UI. Only ``AI_PROVIDER_LABEL`` means a model
+#: wrote the wording; every other label is a deterministic answer.
+AI_PROVIDER_LABEL = "DeepSeek"
+PROVIDER_VERIFIED = "Verified data"
+PROVIDER_INSTANT = "Instant explanation"
+PROVIDER_SAFETY = "Safety rule"
+PROVIDER_FALLBACK = "Rule-based fallback"
+
+#: User-facing copy. Provider internals, HTTP status codes and tracebacks are
+#: never shown in the product.
+AI_UNAVAILABLE_NOTICE = "AI explanation is temporarily unavailable. The deterministic answer is shown instead."
+AI_REJECTED_NOTICE = "The AI draft did not pass factual validation, so the verified deterministic answer is shown."
+
+
+class DeepSeekError(RuntimeError):
+    """Base class for provider failures that must degrade to the rule answer."""
+
+
+class DeepSeekConfigurationError(DeepSeekError):
+    """The deployment has no usable API key or provider configuration."""
+
+
+class DeepSeekProviderError(DeepSeekError):
+    """The provider was reachable but did not return a usable explanation."""
+
 
 #: The model may explain verified facts, never decide them. Personal factual
-#: questions never reach the model at all (see ai_facts.route_question).
+#: questions never reach the model at all (see ``ai_facts.route_question``).
 _SYSTEM_PROMPT = (
-    "You are a concise, context-aware training coach. You explain and discuss; the deterministic engines and the "
-    "verified structured personal facts decide. Rules you must follow: never invent personal metrics; never change a "
-    "recorded number; never change a unit; weekly exposure represents training-set exposure (weighted working sets), "
-    "not days trained and not sessions; session duration is not training load; training load and session duration are "
-    "different concepts; if a personal fact is not provided, say it is unavailable; do not infer missing personal "
-    "history; do not override or replace the deterministic primary recommendation; clearly distinguish a primary "
-    "recommendation from a rule-generated alternative. You may answer general training and recovery questions with "
-    "general sports-science knowledge when the question is not about the user's own recorded data. Do not diagnose "
-    "medical conditions, predict injury, or reveal hidden chain-of-thought."
+    "You are the explanation layer of a training decision-support product. "
+    "The deterministic system is the source of truth for personal metrics and recommendations. "
+    "Rules you must follow: never invent personal metrics or training history; never change a provided value or unit; "
+    "never convert weighted working sets into days or sessions; training load is measured in AU and is not session duration; "
+    "session duration is measured in minutes; never call readiness a recovery percentage; never override or replace the "
+    "primary recommendation, and clearly distinguish the primary recommendation from a rule-generated alternative; "
+    "if personal information is unavailable, say it is unavailable; do not infer missing health or training data; "
+    "do not present a medical diagnosis, predict injury, or reveal hidden chain-of-thought. "
+    "Be concise, clear, supportive and evidence-informed: usually two to five short sentences, written for the athlete "
+    "rather than for a clinician. General training and recovery concepts may be explained with general sports-science "
+    "knowledge when the question is not about the user's own recorded data."
 )
+
+_diag: dict[str, Any] = {
+    "request_attempted": False,
+    "response_received": False,
+    "generation_completed": False,
+    "validation_accepted": False,
+    "provider_used": PROVIDER_FALLBACK,
+    "stage": None,
+    "last_validation_reason": "Not requested",
+    "prompt_tokens": None,
+    "completion_tokens": None,
+}
+_last_model_error: str | None = None
+_last_generation_seconds: float | None = None
+
+
+# --------------------------------------------------------------------------- #
+# Configuration
+# --------------------------------------------------------------------------- #
 
 
 def _setting(secrets: Mapping[str, Any] | None, name: str) -> str:
@@ -50,49 +111,164 @@ def _is_true(value: str) -> bool:
     return value.casefold() in {"1", "true", "yes", "on"}
 
 
-def embedded_model_name(secrets: Mapping[str, Any] | None = None) -> str:
-    return _setting(secrets, "EMBEDDED_LLM_MODEL") or DEFAULT_EMBEDDED_MODEL
+def deepseek_api_key(secrets: Mapping[str, Any] | None = None) -> str:
+    """Streamlit secrets take priority, then the environment variable."""
+    return _setting(secrets, "DEEPSEEK_API_KEY")
+
+
+def deepseek_model_name(secrets: Mapping[str, Any] | None = None) -> str:
+    return _setting(secrets, "DEEPSEEK_MODEL") or DEFAULT_DEEPSEEK_MODEL
+
+
+def deepseek_base_url(secrets: Mapping[str, Any] | None = None) -> str:
+    return (_setting(secrets, "DEEPSEEK_BASE_URL") or DEFAULT_DEEPSEEK_BASE_URL).rstrip("/")
+
+
+def ai_coach_enabled(secrets: Mapping[str, Any] | None = None) -> bool:
+    """The explanation layer is opt-in: no key means deterministic answers only."""
+    if _is_true(_setting(secrets, "DISABLE_AI_COACH")) or _is_true(_setting(secrets, "DISABLE_EMBEDDED_LLM")):
+        return False
+    return bool(deepseek_api_key(secrets))
+
+
+def _redact(text: str) -> str:
+    """Never let a credential reach a log line, notice or diagnostics panel."""
+    return re.sub(r"sk-[A-Za-z0-9_\-]{4,}", "sk-***", text)
+
+
+def _build_provider(secrets: Mapping[str, Any] | None = None) -> "DeepSeekCoachProvider":
+    return DeepSeekCoachProvider(
+        api_key=deepseek_api_key(secrets),
+        model=deepseek_model_name(secrets),
+        base_url=deepseek_base_url(secrets),
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Provider
+# --------------------------------------------------------------------------- #
+
+
+class DeepSeekCoachProvider:
+    """Minimal OpenAI-compatible chat-completions client.
+
+    Deliberately dependency-light: one HTTPS POST built on ``requests``, which
+    is already a Streamlit dependency. ``transport`` exists so tests can inject
+    a fake callable instead of contacting the provider.
+    """
+
+    def __init__(self, api_key: str, model: str = DEFAULT_DEEPSEEK_MODEL,
+                 base_url: str = DEFAULT_DEEPSEEK_BASE_URL,
+                 timeout: float = REQUEST_TIMEOUT_SECONDS,
+                 transport: Callable[..., Any] | None = None) -> None:
+        self.api_key = api_key
+        self.model = model
+        self.base_url = base_url.rstrip("/")
+        self.timeout = timeout
+        self._transport = transport
+
+    @property
+    def endpoint(self) -> str:
+        return f"{self.base_url}{CHAT_COMPLETIONS_PATH}"
+
+    @property
+    def configured(self) -> bool:
+        return bool(self.api_key)
+
+    def build_payload(self, messages: Sequence[Mapping[str, str]]) -> dict[str, Any]:
+        """Structured request. Thinking is disabled explicitly, never by default."""
+        return {
+            "model": self.model,
+            "messages": [{"role": str(item.get("role")), "content": str(item.get("content", ""))} for item in messages],
+            "stream": False,
+            "temperature": 0.3,
+            "max_tokens": MAX_OUTPUT_TOKENS,
+            # Non-thinking mode: the Coach explains a decision the deterministic
+            # engine already made, so long hidden reasoning is neither wanted
+            # nor needed.
+            "thinking": {"type": "disabled"},
+        }
+
+    def build_headers(self) -> dict[str, str]:
+        return {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
+
+    def complete(self, messages: Sequence[Mapping[str, str]]) -> str:
+        if not self.configured:
+            raise DeepSeekConfigurationError("DEEPSEEK_API_KEY is not configured")
+        payload = self.build_payload(messages)
+        post = self._transport or requests.post
+        try:
+            response = post(self.endpoint, headers=self.build_headers(), json=payload, timeout=self.timeout)
+        except requests.exceptions.Timeout as exc:
+            raise DeepSeekProviderError("The AI provider did not respond in time") from exc
+        except requests.exceptions.RequestException as exc:
+            raise DeepSeekProviderError("The AI provider could not be reached") from exc
+        _diag["response_received"] = True
+        status = int(getattr(response, "status_code", 200))
+        if status >= 400:
+            # Deliberately does not echo the provider body: it can contain
+            # request metadata that must not be surfaced or persisted.
+            raise DeepSeekProviderError(f"The AI provider returned HTTP {status}")
+        try:
+            body = response.json()
+        except ValueError as exc:
+            raise DeepSeekProviderError("The AI provider returned an unreadable response") from exc
+        if not isinstance(body, Mapping):
+            raise DeepSeekProviderError("The AI provider returned an unexpected response shape")
+        usage = body.get("usage") or {}
+        if isinstance(usage, Mapping):
+            _diag["prompt_tokens"] = usage.get("prompt_tokens")
+            _diag["completion_tokens"] = usage.get("completion_tokens")
+        choices = body.get("choices") or []
+        text = ""
+        if choices and isinstance(choices[0], Mapping):
+            message = choices[0].get("message") or {}
+            if isinstance(message, Mapping):
+                text = str(message.get("content") or "").strip()
+        if not text:
+            raise DeepSeekProviderError("The AI provider returned an empty explanation")
+        return text
+
+
+# --------------------------------------------------------------------------- #
+# Diagnostics
+# --------------------------------------------------------------------------- #
 
 
 def ai_diagnostics(secrets: Mapping[str, Any] | None = None) -> dict[str, Any]:
-    return {"Model": embedded_model_name(secrets), "Architecture": "Embedded local inference", "API": "None", "API key": "None", "Device": "CPU", "Model requested": "Yes" if _diag["model_requested"] else "No", "Model downloaded": "Yes" if _diag["model_downloaded"] else "No", "Tokenizer loaded": "Yes" if _diag["tokenizer_loaded"] else "No", "Model loaded": "Yes" if _diag["model_loaded"] else "No", "Generation attempted": "Yes" if _diag["generation_attempted"] else "No", "Generation completed": "Yes" if _diag["generation_completed"] else "No", "Validation accepted": "Yes" if _diag["validation_accepted"] else "No", "Provider": _diag["provider_used"], "Model load time": f"{_model_load_seconds:.2f}s" if _model_load_seconds is not None else "—", "Generation time": f"{_last_generation_seconds:.2f}s" if _last_generation_seconds is not None else "—", "Last error stage": _diag.get("stage") or "—", "Last validation reason": _diag.get("last_validation_reason", "Not requested"), "Last exception": _last_model_error or "None"}
+    """Developer-only panel. States whether a key exists; never prints it."""
+    return {
+        "Provider": AI_PROVIDER_LABEL,
+        "Model": deepseek_model_name(secrets),
+        "Base URL": deepseek_base_url(secrets),
+        "API key": "Configured" if deepseek_api_key(secrets) else "Not configured",
+        "Credential source": "Streamlit secrets, then environment variable",
+        "Explanation layer": "Enabled" if ai_coach_enabled(secrets) else "Disabled",
+        "Request attempted": "Yes" if _diag["request_attempted"] else "No",
+        "Response received": "Yes" if _diag["response_received"] else "No",
+        "Generation completed": "Yes" if _diag["generation_completed"] else "No",
+        "Validation accepted": "Yes" if _diag["validation_accepted"] else "No",
+        "Active provider": _diag["provider_used"],
+        "Prompt tokens": _diag["prompt_tokens"] if _diag["prompt_tokens"] is not None else "—",
+        "Completion tokens": _diag["completion_tokens"] if _diag["completion_tokens"] is not None else "—",
+        "Response time": f"{_last_generation_seconds:.2f}s" if _last_generation_seconds is not None else "—",
+        "Last error stage": _diag.get("stage") or "—",
+        "Last validation reason": _diag.get("last_validation_reason", "Not requested"),
+        "Last exception": _last_model_error or "None",
+    }
 
 
-@st.cache_resource(show_spinner=False)
-def load_embedded_model(model_id: str) -> tuple[Any, Any]:
-    """Lazy-load the small public model on the first explicit enhancement."""
-    global _loaded_model_id, _model_load_seconds
-    started = time.monotonic()
-    import torch
-    from transformers import AutoModelForCausalLM, AutoTokenizer
-    _diag["stage"] = "TOKENIZER LOAD"
-    tokenizer = AutoTokenizer.from_pretrained(model_id)
-    _diag["tokenizer_loaded"] = True
-    _diag["stage"] = "MODEL LOAD"
-    # Keep dependencies minimal for Streamlit Cloud; ``torch_dtype=auto`` uses
-    # the checkpoint dtype without requiring accelerate or a quantisation stack.
-    model = AutoModelForCausalLM.from_pretrained(model_id, torch_dtype="auto")
-    model.to("cpu")
-    model.eval()
-    _loaded_model_id = model_id
-    _diag["model_downloaded"] = True
-    _diag["model_loaded"] = True
-    _model_load_seconds = time.monotonic() - started
-    return tokenizer, model
+def ai_engine_status(secrets: Mapping[str, Any] | None = None) -> str:
+    if _is_true(_setting(secrets, "DISABLE_AI_COACH")) or _is_true(_setting(secrets, "DISABLE_EMBEDDED_LLM")):
+        return "AI explanations are disabled for this deployment · deterministic Coach is ready"
+    if deepseek_api_key(secrets):
+        return f"{AI_PROVIDER_LABEL} explanation layer is configured"
+    return "Deterministic Coach fallback is ready · set DEEPSEEK_API_KEY to enable AI explanations"
 
 
-def _recommendation_facts(recommendation: Mapping[str, Any] | None) -> str:
-    if not recommendation:
-        return "No workout recommendation has been generated yet."
-    primary = recommendation["primary"]
-    alternatives = ", ".join(item["name"] for item in recommendation.get("alternatives", [])) or "None"
-    avoid = ", ".join(recommendation.get("avoid", [])) or "None"
-    exposure = ", ".join(f"{key} {value:g}" for key, value in recommendation.get("weekly_exposure", {}).items())
-    targets = ", ".join(f"{key} {value:g}" for key, value in recommendation.get("weekly_targets", {}).items())
-    recent = "; ".join(f"{item.get('date')}: {item.get('primary_focus', item.get('training_type'))} (RPE {item.get('session_rpe', 'not recorded')})" for item in recommendation.get("recent_training", [])[:7]) or "None"
-    return (f"Primary recommendation: {primary['name']}. Session demand: {recommendation['intensity']}. Duration: {recommendation['duration']}. "
-            f"Alternatives: {alternatives}. Avoid today: {avoid}. Rationale: {'; '.join(recommendation.get('rationale', []))}. "
-            f"Recent training: {recent}. Current seven-day exposure: {exposure}. Weekly targets: {targets}.")
+# --------------------------------------------------------------------------- #
+# Deterministic answers
+# --------------------------------------------------------------------------- #
 
 
 def validate_llm_response(text: str, readiness_status: str, primary_workout: str | None = None, question: str = "", recommendation: Mapping[str, Any] | None = None) -> tuple[bool, str]:
@@ -182,35 +358,44 @@ def rule_based_answer(question: str, profile: Mapping[str, Any], assessment: Map
 
 
 def get_instant_response(question: str, profile: Mapping[str, Any], assessment: Mapping[str, Any], recommendation: Mapping[str, Any] | None = None) -> tuple[str, str, None]:
-    provider = "Safety rule" if assessment["overall_readiness"] == STOP else "Instant explanation"
+    provider = PROVIDER_SAFETY if assessment["overall_readiness"] == STOP else PROVIDER_INSTANT
     return rule_based_answer(question, profile, assessment, recommendation), provider, None
 
 
-def _generate(question: str, profile: Mapping[str, Any], assessment: Mapping[str, Any], recommendation: Mapping[str, Any], model_id: str, history: Sequence[Mapping[str, str]] = ()) -> str:
-    tokenizer, model = load_embedded_model(model_id)
+# --------------------------------------------------------------------------- #
+# Model call
+# --------------------------------------------------------------------------- #
+
+
+def build_request_messages(question: str, profile: Mapping[str, Any], assessment: Mapping[str, Any],
+                           recommendation: Mapping[str, Any], history: Sequence[Mapping[str, str]] = ()) -> list[dict[str, str]]:
+    """Minimised structured context. Never the full local database."""
     facts = ai_facts.build_personal_facts(profile, assessment, recommendation)
     context = (f"Profile: {profile['name']}; goal: {profile.get('training_goal', 'General Fitness')}; "
                f"training level: {profile.get('training_level', 'Not recorded')}; "
                f"preferred split: {profile.get('training_split_preference', 'No Preference')}.\n"
                + ai_facts.facts_for_prompt(facts))
-    system_prompt = _SYSTEM_PROMPT
-    messages = [{"role": "system", "content": system_prompt}]
-    for message in list(history)[-8:]:
+    messages: list[dict[str, str]] = [{"role": "system", "content": _SYSTEM_PROMPT}]
+    for message in list(history)[-MAX_HISTORY_MESSAGES:]:
         if message.get("role") in {"user", "assistant"}:
-            messages.append({"role": message["role"], "content": str(message.get("content", ""))[:500]})
-    messages.append({"role": "user", "content": f"Verified structured personal facts (the only permitted source of personal numbers):\n{context}\nQuestion: {question}"})
-    if hasattr(tokenizer, "apply_chat_template"):
-        inputs = tokenizer.apply_chat_template(messages, add_generation_prompt=True, tokenize=True, return_dict=True, return_tensors="pt")
-    else:
-        inputs = tokenizer(messages[-1]["content"], return_tensors="pt", truncation=True, max_length=480)
+            messages.append({"role": message["role"], "content": str(message.get("content", ""))[:MAX_HISTORY_MESSAGE_CHARS]})
+    messages.append({"role": "user",
+                     "content": f"Verified structured personal facts (the only permitted source of personal numbers):\n{context}\nQuestion: {question}"})
+    return messages
+
+
+def _generate(question: str, profile: Mapping[str, Any], assessment: Mapping[str, Any],
+              recommendation: Mapping[str, Any], history: Sequence[Mapping[str, str]] = (),
+              secrets: Mapping[str, Any] | None = None, provider: "DeepSeekCoachProvider | None" = None) -> str:
+    provider = provider or _build_provider(secrets)
+    messages = build_request_messages(question, profile, assessment, recommendation, history)
     _diag["stage"] = "GENERATION"
-    with _generation_lock:
-        output = model.generate(**inputs, max_new_tokens=MAX_NEW_TOKENS, do_sample=False, pad_token_id=tokenizer.eos_token_id)
-    text = tokenizer.decode(output[0][inputs["input_ids"].shape[1]:], skip_special_tokens=True).strip()
-    _diag["generation_completed"] = True
-    if not text:
-        raise ValueError("The embedded model returned an empty explanation")
-    return text
+    return provider.complete(messages)
+
+
+# --------------------------------------------------------------------------- #
+# Entry point
+# --------------------------------------------------------------------------- #
 
 
 def get_ai_response(question: str, profile: Mapping[str, Any], assessment: Mapping[str, Any], recommendation: Mapping[str, Any], history: Sequence[Mapping[str, str]] = (), secrets: Mapping[str, Any] | None = None) -> tuple[str, str, str | None]:
@@ -219,15 +404,15 @@ def get_ai_response(question: str, profile: Mapping[str, Any], assessment: Mappi
     route = ai_facts.route_question(question, history, facts)
     _diag["last_route"] = route.as_trace()
     if assessment["overall_readiness"] == STOP:
-        return rule_based_answer(question, profile, assessment, recommendation), "Safety rule", None
+        return rule_based_answer(question, profile, assessment, recommendation), PROVIDER_SAFETY, None
     if route.kind == "SAFETY":
-        return rule_based_answer(question, profile, assessment, recommendation), "Safety rule", None
+        return rule_based_answer(question, profile, assessment, recommendation), PROVIDER_SAFETY, None
     if route.kind == "PERSONAL_FACT":
         # Deterministic layer answers; the model is not consulted, so it cannot
         # invent a number, unit or period for the user's own data.
-        return ai_facts.grounded_answer(route, facts), "Verified data", "Answered from your recorded data. No model wording was used."
+        return ai_facts.grounded_answer(route, facts), PROVIDER_VERIFIED, "Answered from your recorded data. No model wording was used."
     if route.kind == "UNRESOLVED_PERSONAL":
-        return ai_facts.CLARIFICATION, "Verified data", "The question could not be mapped to a supported personal metric, so no model was used."
+        return ai_facts.CLARIFICATION, PROVIDER_VERIFIED, "The question could not be mapped to a supported personal metric, so no model was used."
     if route.kind == "CORRECTION":
         previous_route = ai_facts.route_question(route.previous_question or "", (), facts)
         if previous_route.kind != "PERSONAL_FACT":
@@ -243,19 +428,23 @@ def get_ai_response(question: str, profile: Mapping[str, Any], assessment: Mappi
                     break
         previous_answer = next((str(message.get("content", "")) for message in reversed(list(history)) if message.get("role") == "assistant"), None)
         answer = ai_facts.correction_answer(previous_route if previous_route.kind == "PERSONAL_FACT" else None, facts, previous_answer)
-        return answer, "Verified data", "Your previous answer was re-checked against your recorded data."
-    if _is_true(_setting(secrets, "DISABLE_EMBEDDED_LLM")):
-        return rule_based_answer(question, profile, assessment, recommendation), "Instant explanation", "The embedded AI is disabled for this deployment."
+        return answer, PROVIDER_VERIFIED, "Your previous answer was re-checked against your recorded data."
+    # Only explanation / discussion / general questions continue past this point.
+    if _is_true(_setting(secrets, "DISABLE_AI_COACH")) or _is_true(_setting(secrets, "DISABLE_EMBEDDED_LLM")):
+        return rule_based_answer(question, profile, assessment, recommendation), PROVIDER_INSTANT, "AI explanations are disabled for this deployment, so the deterministic answer is shown."
+    if not deepseek_api_key(secrets):
+        return rule_based_answer(question, profile, assessment, recommendation), PROVIDER_INSTANT, AI_UNAVAILABLE_NOTICE
     try:
         started = time.monotonic()
-        _diag["model_requested"] = True
-        _diag["generation_attempted"] = True
+        _diag["request_attempted"] = True
+        _diag["response_received"] = False
         _diag["generation_completed"] = False
         _diag["validation_accepted"] = False
         _diag["stage"] = "GENERATION"
-        explanation = _generate(question, profile, assessment, recommendation, embedded_model_name(secrets), history[-8:])
+        explanation = _generate(question, profile, assessment, recommendation, list(history)[-MAX_HISTORY_MESSAGES:], secrets)
         global _last_generation_seconds
         _last_generation_seconds = time.monotonic() - started
+        _diag["generation_completed"] = True
         approved = recommendation["primary"]["name"]
         accepted, validation_reason = validate_llm_response(explanation, str(assessment["overall_readiness"]), approved, question, recommendation)
         if accepted:
@@ -267,21 +456,15 @@ def get_ai_response(question: str, profile: Mapping[str, Any], assessment: Mappi
             _diag["last_validation_reason"] = validation_reason
             raise ValueError(validation_reason)
         _diag["validation_accepted"] = True
-        _diag["provider_used"] = "Built-in AI"
+        _diag["provider_used"] = AI_PROVIDER_LABEL
         _diag["last_validation_reason"] = validation_reason
-        return explanation, "Built-in AI · Qwen2.5-0.5B", None
+        return explanation, AI_PROVIDER_LABEL, None
     except Exception as exc:
         global _last_model_error
-        _last_model_error = f"{type(exc).__name__}: {str(exc)[:280]}"
-        _diag["provider_used"] = "Rule-based fallback"
-        _diag["stage"] = _diag.get("stage") or "MODEL LOAD"
+        _last_model_error = _redact(f"{type(exc).__name__}: {str(exc)[:280]}")
+        _diag["provider_used"] = PROVIDER_FALLBACK
+        _diag["stage"] = _diag.get("stage") or "GENERATION"
         if _diag.get("stage") != "VALIDATION":
             _diag["last_validation_reason"] = "Fallback retained the canonical deterministic answer."
-        notice = ("The embedded draft did not pass factual validation, so the verified deterministic answer is shown."
-                  if _diag.get("stage") == "VALIDATION" else
-                  "The embedded model could not load or respond. The deterministic recommendation remains available.")
-        return rule_based_answer(question, profile, assessment, recommendation), "Instant explanation", notice
-
-
-def ai_engine_status(secrets: Mapping[str, Any] | None = None) -> str:
-    return "Built-in Qwen AI is ready" if _loaded_model_id else "Deterministic Coach fallback is ready · Qwen loads on first Coach question"
+        notice = AI_REJECTED_NOTICE if _diag.get("stage") == "VALIDATION" else AI_UNAVAILABLE_NOTICE
+        return rule_based_answer(question, profile, assessment, recommendation), PROVIDER_INSTANT, notice

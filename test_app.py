@@ -6,10 +6,13 @@ from datetime import date, timedelta
 from io import BytesIO
 from pathlib import Path
 import json
+import re
+
+import pytest
 
 import ai_engine
 import ai_facts
-from ai_engine import DEFAULT_EMBEDDED_MODEL, get_ai_response, get_instant_response
+from ai_engine import DEFAULT_DEEPSEEK_MODEL, get_ai_response, get_instant_response
 from app import real_today_inputs, scenario_values, validate_uploaded_csv
 from demo_data import build_demo_profiles
 from local_data import LocalDataError, clear_local_runtime, empty_local_state, export_backup, hydrate_runtime_state, import_backup, profiles_from_local_state, serialize_runtime_state, validate_local_state
@@ -22,6 +25,12 @@ from training_recommendation_engine import EXERCISE_MUSCLE_MAPPING, WORKOUTS, fr
 class Runtime(dict):
     __getattr__ = dict.__getitem__
     __setattr__ = dict.__setitem__
+
+
+#: A fake credential. Every AI test injects it so no test can reach a real
+#: provider endpoint, and no test asserts on a real key.
+_FAKE_KEY_VALUE = "test-key-not-a-real-credential"
+_CONFIGURED = {"DEEPSEEK_API_KEY": _FAKE_KEY_VALUE}
 
 
 def readiness_history(days: int = 35) -> list[dict]:
@@ -178,17 +187,23 @@ def test_ai_failure_leaves_deterministic_answer(monkeypatch) -> None:
     profile = ethan()
     recommendation = recommend_training(profile, assessment(GREEN), profile["training_history"])
     monkeypatch.setattr(ai_engine, "_generate", lambda *args: (_ for _ in ()).throw(RuntimeError("offline")))
-    answer, provider, notice = get_ai_response("Why this workout?", profile, assessment(GREEN), recommendation)
+    answer, provider, notice = get_ai_response("Why this workout?", profile, assessment(GREEN), recommendation, (), _CONFIGURED)
     assert provider == "Instant explanation"
     assert notice and "deterministic" in notice
     assert recommendation["primary"]["name"] in answer
 
 
-def test_ai_does_not_need_api_key_or_load_before_request() -> None:
+def test_ai_diagnostics_report_the_provider_without_exposing_a_key() -> None:
     diagnostics = ai_engine.ai_diagnostics({})
-    assert diagnostics["API key"] == "None"
-    assert diagnostics["Model"] == DEFAULT_EMBEDDED_MODEL
-    assert "Qwen2.5-0.5B" in DEFAULT_EMBEDDED_MODEL
+    assert diagnostics["Provider"] == "DeepSeek"
+    assert diagnostics["Model"] == DEFAULT_DEEPSEEK_MODEL
+    assert diagnostics["API key"] == "Not configured"
+    assert diagnostics["Explanation layer"] == "Disabled"
+    configured = ai_engine.ai_diagnostics(_CONFIGURED)
+    assert configured["API key"] == "Configured"
+    assert configured["Explanation layer"] == "Enabled"
+    # the key value itself is never part of the diagnostics payload
+    assert _FAKE_KEY_VALUE not in json.dumps(configured)
 
 
 def test_english_only_streamlit_cloud_source_has_no_language_selector() -> None:
@@ -214,12 +229,12 @@ def test_sidebar_and_training_cards_exist() -> None:
     assert "mobile_bottom_nav" in source
 
 
-def test_today_dashboard_renders_without_loading_embedded_model() -> None:
+def test_today_dashboard_renders_without_calling_the_ai_provider() -> None:
     from streamlit.testing.v1 import AppTest
     dashboard = AppTest.from_file("app.py").run(timeout=20)
     assert not dashboard.exception
     assert any(item.label == "View workout" for item in dashboard.button)
-    assert ai_engine._loaded_model_id is None
+    assert ai_engine._diag["request_attempted"] is False
 
 
 def test_csv_validation_still_rejects_missing_columns() -> None:
@@ -468,11 +483,11 @@ def test_ai_weekly_sets_answer_uses_recorded_exposure() -> None:
     assert "not days" in answer.casefold()
 
 
-def test_qwen_success_has_no_forced_recommendation_prefix(monkeypatch) -> None:
+def test_ai_success_keeps_the_model_wording_and_the_provider_label(monkeypatch) -> None:
     profile = ethan(); rec = recommend_training(profile, assessment(GREEN), profile["training_history"])
     monkeypatch.setattr(ai_engine, "_generate", lambda *args: "RIR means repetitions in reserve.")
-    answer, provider, notice = get_ai_response("What is RIR?", profile, assessment(GREEN), rec)
-    assert provider.startswith("Built-in AI") and notice is None
+    answer, provider, notice = get_ai_response("What is RIR?", profile, assessment(GREEN), rec, (), _CONFIGURED)
+    assert provider == ai_engine.AI_PROVIDER_LABEL and notice is None
     assert answer.startswith("RIR means")
     assert "Approved recommendation" not in answer
 
@@ -1051,11 +1066,11 @@ def test_ai_case_14_profile_isolation_has_no_stale_context() -> None:
     assert first_answer != second_answer
 
 
-def test_ai_case_15_factual_query_survives_qwen_failure_and_never_calls_it(monkeypatch) -> None:
+def test_ai_case_15_factual_query_survives_provider_failure_and_never_calls_it(monkeypatch) -> None:
     profile, real_assessment, rec = _coach_fixture()
 
     def explode(*args, **kwargs):
-        raise AssertionError("The model must not be called for a personal factual query")
+        raise AssertionError("The AI provider must not be called for a personal factual query")
 
     monkeypatch.setattr(ai_engine, "_generate", explode)
     for question in ("How much have I trained back this week?", "What's my training load today?",
@@ -1064,7 +1079,7 @@ def test_ai_case_15_factual_query_survives_qwen_failure_and_never_calls_it(monke
         assert provider == "Verified data"
         assert answer
 
-    # the same queries also work when the deployment disables the embedded model
+    # the same queries also work when the deployment disables the explanation layer
     answer, provider, _ = get_ai_response("How much have I trained back this week?", profile, real_assessment, rec, [], {"DISABLE_EMBEDDED_LLM": "true"})
     assert provider == "Verified data"
     assert f"{rec['weekly_exposure']['Back']:g}" in answer
@@ -1152,7 +1167,7 @@ def test_today_renders_primary_recommendation_and_session_demand() -> None:
     assert payload["primary"] in html
     assert payload["duration"] in html
     assert payload["session_demand"] in html
-    assert ai_engine._loaded_model_id is None       # opening Today must not load Qwen
+    assert ai_engine._diag["request_attempted"] is False   # opening Today must not call the AI provider
 
 
 def test_today_shows_engine_session_demand_not_a_guess() -> None:
@@ -1404,3 +1419,283 @@ def test_cross_page_terminology_is_consistent() -> None:
     assert "Session duration is not training load" in sources or "not training load" in sources
     trends_source = Path("app.py").read_text(encoding="utf-8")
     assert "check-ins" in trends_source and "duration × session RPE" in trends_source
+
+
+# --------------------------------------------------------------------------- #
+# PHASE 5 — DeepSeek explanation layer
+# --------------------------------------------------------------------------- #
+
+
+class FakeResponse:
+    """Minimal stand-in for a ``requests`` response object."""
+
+    def __init__(self, payload=None, status_code: int = 200, unreadable: bool = False) -> None:
+        self._payload = payload
+        self.status_code = status_code
+        self._unreadable = unreadable
+
+    def json(self):
+        if self._unreadable:
+            raise ValueError("response body is not JSON")
+        return self._payload
+
+
+def _install_transport(monkeypatch, payload=None, status_code: int = 200, unreadable: bool = False, raises=None):
+    """Fake the HTTPS transport and return the recorded calls. No network is used."""
+    calls: list[dict] = []
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        calls.append({"url": url, "headers": headers, "payload": json, "timeout": timeout})
+        if raises is not None:
+            raise raises
+        return FakeResponse(payload, status_code, unreadable)
+
+    monkeypatch.setattr(ai_engine.requests, "post", fake_post)
+    return calls
+
+
+def _provider_payload(text: str) -> dict:
+    return {"choices": [{"message": {"role": "assistant", "content": text}}],
+            "usage": {"prompt_tokens": 812, "completion_tokens": 96}}
+
+
+def _reset_diagnostics() -> None:
+    ai_engine._diag.update({"request_attempted": False, "response_received": False, "generation_completed": False,
+                            "validation_accepted": False, "provider_used": ai_engine.PROVIDER_FALLBACK,
+                            "stage": None, "last_validation_reason": "Not requested",
+                            "prompt_tokens": None, "completion_tokens": None})
+
+
+@pytest.fixture(autouse=True)
+def _clean_ai_diagnostics():
+    """AI diagnostics are process-wide; keep one test's provider call out of the next."""
+    _reset_diagnostics()
+    ai_engine._last_model_error = None
+    yield
+    _reset_diagnostics()
+    ai_engine._last_model_error = None
+
+
+def _grounded_draft(rec, real_assessment) -> str:
+    """A draft that satisfies every guard, so a test can isolate the provider layer."""
+    return (f"{rec['primary']['name']} stays primary because readiness is {real_assessment['overall_readiness']} "
+            "and weekly exposure plus recent training drive the split.")
+
+
+def test_deepseek_request_is_openai_compatible_and_disables_thinking(monkeypatch) -> None:
+    _reset_diagnostics()
+    profile, real_assessment, rec = _coach_fixture()
+    calls = _install_transport(monkeypatch, _provider_payload(_grounded_draft(rec, real_assessment)))
+
+    answer, provider, notice = get_ai_response("Why this workout?", profile, real_assessment, rec, [], _CONFIGURED)
+
+    assert provider == ai_engine.AI_PROVIDER_LABEL and notice is None
+    assert answer.startswith(rec["primary"]["name"])
+    assert len(calls) == 1
+    call = calls[0]
+    assert call["url"] == "https://api.deepseek.com/chat/completions"
+    assert call["timeout"] == ai_engine.REQUEST_TIMEOUT_SECONDS
+    assert call["headers"]["Authorization"] == f"Bearer {_FAKE_KEY_VALUE}"
+    payload = call["payload"]
+    assert payload["model"] == "deepseek-flash"
+    assert payload["stream"] is False
+    assert payload["max_tokens"] == ai_engine.MAX_OUTPUT_TOKENS
+    assert payload["thinking"] == {"type": "disabled"}
+    assert payload["messages"][0]["role"] == "system"
+    assert payload["messages"][-1]["role"] == "user"
+    diagnostics = ai_engine.ai_diagnostics(_CONFIGURED)
+    assert diagnostics["Active provider"] == "DeepSeek"
+    assert diagnostics["Prompt tokens"] == 812 and diagnostics["Completion tokens"] == 96
+
+
+def test_deepseek_context_is_minimised_and_profile_scoped(monkeypatch) -> None:
+    profile, real_assessment, rec = _coach_fixture(0)
+    calls = _install_transport(monkeypatch, _provider_payload(_grounded_draft(rec, real_assessment)))
+
+    get_ai_response("Why this workout?", profile, real_assessment, rec, [], _CONFIGURED)
+
+    payload = calls[0]["payload"]
+    serialised = json.dumps(payload, ensure_ascii=False)
+    assert [message["role"] for message in payload["messages"]] == ["system", "user"]   # no history, no full database
+    assert _FAKE_KEY_VALUE not in serialised                                            # the key never travels in the body
+    for other_profile in ("Alex", "Jessica"):
+        assert other_profile not in serialised
+    for forbidden in ("user_id", "schema_version", "daily_checkins", "storage_revision", "backup"):
+        assert forbidden not in serialised
+    assert "weighted working sets" in serialised
+    assert "NOT days and NOT sessions" in serialised
+    assert "Training load is NOT session duration" in serialised
+
+
+def test_deepseek_history_is_bounded_and_truncated(monkeypatch) -> None:
+    profile, real_assessment, rec = _coach_fixture()
+    calls = _install_transport(monkeypatch, _provider_payload(_grounded_draft(rec, real_assessment)))
+
+    history = []
+    for index in range(14):
+        history.append({"role": "user", "content": f"user turn {index}"})
+        history.append({"role": "assistant", "content": "x" * 900})
+    get_ai_response("Why this workout?", profile, real_assessment, rec, history, _CONFIGURED)
+
+    messages = calls[0]["payload"]["messages"]
+    assert len(messages) == 2 + ai_engine.MAX_HISTORY_MESSAGES
+    assert messages[0]["role"] == "system" and messages[-1]["role"] == "user"
+    assert all(len(message["content"]) <= ai_engine.MAX_HISTORY_MESSAGE_CHARS for message in messages[1:-1])
+    serialised = json.dumps(messages)
+    assert "user turn 13" in serialised      # the newest turns survive
+    assert "user turn 0" not in serialised   # the oldest turns are dropped
+
+
+def test_deepseek_missing_key_degrades_without_calling_the_provider(monkeypatch) -> None:
+    profile, real_assessment, rec = _coach_fixture()
+    calls = _install_transport(monkeypatch, _provider_payload("unused"))
+
+    answer, provider, notice = get_ai_response("Why this workout?", profile, real_assessment, rec, [], {})
+
+    assert calls == []
+    assert provider == "Instant explanation"
+    assert notice == ai_engine.AI_UNAVAILABLE_NOTICE
+    assert rec["primary"]["name"] in answer
+
+
+def test_deepseek_disabled_deployment_never_calls_the_provider(monkeypatch) -> None:
+    profile, real_assessment, rec = _coach_fixture()
+    calls = _install_transport(monkeypatch, _provider_payload("unused"))
+
+    for setting in ("DISABLE_AI_COACH", "DISABLE_EMBEDDED_LLM"):
+        answer, provider, notice = get_ai_response("Why this workout?", profile, real_assessment, rec, [],
+                                                   {**_CONFIGURED, setting: "true"})
+        assert provider == "Instant explanation" and "disabled" in str(notice)
+        assert rec["primary"]["name"] in answer
+    assert calls == []
+    assert "disabled" in ai_engine.ai_engine_status({**_CONFIGURED, "DISABLE_AI_COACH": "true"})
+
+
+def test_deepseek_timeout_degrades_to_the_deterministic_answer(monkeypatch) -> None:
+    _reset_diagnostics()
+    profile, real_assessment, rec = _coach_fixture()
+    _install_transport(monkeypatch, raises=ai_engine.requests.exceptions.Timeout("provider too slow"))
+
+    answer, provider, notice = get_ai_response("Why this workout?", profile, real_assessment, rec, [], _CONFIGURED)
+
+    assert provider == "Instant explanation" and notice == ai_engine.AI_UNAVAILABLE_NOTICE
+    assert rec["primary"]["name"] in answer
+    assert ai_engine._diag["request_attempted"] is True
+    assert ai_engine._diag["generation_completed"] is False
+    assert "Traceback" not in answer and _FAKE_KEY_VALUE not in notice
+    assert "sk-" not in str(ai_engine._last_model_error)
+
+
+def test_deepseek_network_and_provider_errors_never_crash_the_coach(monkeypatch) -> None:
+    profile, real_assessment, rec = _coach_fixture()
+    scenarios = [
+        ("network error", {"raises": ai_engine.requests.exceptions.ConnectionError("dns failure")}),
+        ("authentication error", {"status_code": 401}),
+        ("rate limit", {"status_code": 429}),
+        ("provider error", {"status_code": 500}),
+        ("invalid response", {"payload": None}),
+        ("empty choices", {"payload": {"choices": []}}),
+        ("empty content", {"payload": {"choices": [{"message": {"content": "   "}}]}}),
+        ("unreadable body", {"payload": None, "unreadable": True}),
+    ]
+    for label, kwargs in scenarios:
+        _reset_diagnostics()
+        _install_transport(monkeypatch, **kwargs)
+        answer, provider, notice = get_ai_response("Why this workout?", profile, real_assessment, rec, [], _CONFIGURED)
+        assert provider == "Instant explanation", label
+        assert notice == ai_engine.AI_UNAVAILABLE_NOTICE, label
+        assert rec["primary"]["name"] in answer, label
+
+
+def test_personal_factual_questions_never_call_the_ai_provider(monkeypatch) -> None:
+    profile, real_assessment, rec = _coach_fixture()
+    calls = _install_transport(monkeypatch, _provider_payload("unused"))
+
+    for question in ("How much have I trained back this week?", "How many days have I trained back?",
+                     "What's my training load today?", "How long should I train today?",
+                     "What's my readiness today?", "How sore is my back?"):
+        answer, provider, _ = get_ai_response(question, profile, real_assessment, rec, [], _CONFIGURED)
+        assert provider == "Verified data", question
+        assert answer, question
+    assert calls == []
+
+
+def test_personal_factual_corrections_never_call_the_ai_provider(monkeypatch) -> None:
+    profile, real_assessment, rec = _coach_fixture()
+    calls = _install_transport(monkeypatch, _provider_payload("unused"))
+    back = rec["weekly_exposure"]["Back"]
+    history = [{"role": "user", "content": "How much have I trained back this week?"},
+               {"role": "assistant", "content": f"You have logged {back:g} weighted working sets of back work."}]
+
+    answer, provider, _ = get_ai_response("But one week has only 7 days, so is that right?", profile, real_assessment, rec, history, _CONFIGURED)
+    assert provider == "Verified data"
+    assert re.search(r"12 days", answer.casefold()) is None
+
+    answer, provider, _ = get_ai_response("Are you sure?", profile, real_assessment, rec, history, _CONFIGURED)
+    assert provider == "Verified data" and answer
+    assert calls == []
+
+
+def test_ai_hallucinations_are_rejected_and_replaced_by_the_verified_answer(monkeypatch) -> None:
+    profile, real_assessment, rec = _coach_fixture()
+    primary = rec["primary"]["name"]
+    actual_status = str(real_assessment["overall_readiness"]).upper()
+    wrong_status = "Red" if actual_status != "RED" else "Green"
+    bad_drafts = {
+        "unit drift to days": f"You have trained back for 47 days this week, so {primary} stays primary.",
+        "unsupported readiness": f"Your overall readiness is {wrong_status}, so {primary} stays primary.",
+        "replaced recommendation": "Your primary recommendation is Legs today.",
+        "invented HRV": f"Your HRV is 118 ms today, which is why {primary} stays primary.",
+        "invented duration": f"Train for 145 minutes, because {primary} stays primary.",
+        "invented rationale": "You are training back to build your core muscles, which improves balance.",
+    }
+    for label, draft in bad_drafts.items():
+        _reset_diagnostics()
+        _install_transport(monkeypatch, _provider_payload(draft))
+        answer, provider, notice = get_ai_response("Why this workout?", profile, real_assessment, rec, [], _CONFIGURED)
+        assert provider == "Instant explanation", label
+        assert draft not in answer, label
+        assert primary in answer, label
+        assert ai_engine._diag["validation_accepted"] is False, label
+
+
+def test_explanation_layer_cannot_invent_missing_personal_data(monkeypatch) -> None:
+    profile, real_assessment, rec = _coach_fixture()
+    calls = _install_transport(monkeypatch, _provider_payload(
+        "Your HRV is 118 ms today, so you have excellent recovery capacity and should train legs."))
+
+    answer, provider, notice = get_ai_response("Why this workout?", profile, real_assessment, rec, [], _CONFIGURED)
+
+    assert len(calls) == 1                                  # the draft really was requested
+    assert provider == "Instant explanation"                # and then rejected by the guards
+    assert notice == ai_engine.AI_REJECTED_NOTICE
+    assert "118" not in answer and "excellent recovery capacity" not in answer
+    verified, verified_provider, _ = get_ai_response("What's my readiness today?", profile, real_assessment, rec, [], {})
+    assert verified_provider == "Verified data" and verified
+
+
+def test_deepseek_provider_labels_and_fallbacks_are_provider_neutral(monkeypatch) -> None:
+    profile, real_assessment, rec = _coach_fixture()
+    calls = _install_transport(monkeypatch, _provider_payload(_grounded_draft(rec, real_assessment)))
+    _, provider, _ = get_ai_response("Why this workout?", profile, real_assessment, rec, [], _CONFIGURED)
+    assert provider == ai_engine.AI_PROVIDER_LABEL
+    source = Path("app.py").read_text(encoding="utf-8")
+    assert "AI_PROVIDER_LABEL" in source
+    for retired in ("Qwen", "qwen", "Built-in AI", "embedded model", "transformers", "torch"):
+        assert retired not in source, retired
+    for module in ("ai_engine.py", "requirements.txt", "README.md", ".streamlit/secrets.toml.example", "run_demo.command"):
+        text = Path(module).read_text(encoding="utf-8")
+        assert "Qwen" not in text and "qwen" not in text, module
+        assert "torch" not in text and "transformers" not in text, module
+
+
+def test_about_page_discloses_the_real_provider_and_privacy_boundary() -> None:
+    _, html, headings, captions = _page_render("About")
+    disclosure = "\n".join([html, *captions])
+    assert "AI architecture" in headings and "Data & Privacy" in headings
+    assert "DeepSeek" in disclosure
+    assert "summarised context" in disclosure.casefold()
+    for stale in ("Qwen", "no commercial AI API", "Commercial AI API: none",
+                  "All data stays on device", "all AI runs locally",
+                  "Your data stays local", "YOUR DATA STAYS LOCAL"):
+        assert stale not in disclosure, stale
