@@ -60,6 +60,12 @@ def _classify(provider: str) -> tuple[str, bool, bool]:
     return "deterministic_fallback", False, False
 
 
+def verified_answer(text: str, notice: str | None = None) -> dict[str, Any]:
+    """A deterministic answer produced outside the router but inside its contract."""
+    return {"answer": text, "provider": ai_engine.PROVIDER_VERIFIED, "kind": "verified_data",
+            "ai_used": False, "verified_data": True, "notice": notice, "contract": dict(_CONTRACT)}
+
+
 def answer(question: str, profile: Mapping[str, Any], assessment: Mapping[str, Any],
            recommendation: Mapping[str, Any], history: Sequence[Mapping[str, str]] = (),
            secrets: Mapping[str, Any] | None = None) -> dict[str, Any]:

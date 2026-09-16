@@ -102,6 +102,10 @@ class TrainingRecommendationSummary(ApiModel):
     split: str | None = None
     muscle_groups: list[str] = Field(default_factory=list)
     session_demand: str
+    #: V1.3: the engine's own demand is preserved next to the final, adapted one.
+    base_session_demand: str | None = None
+    personal_response: dict[str, Any] = Field(default_factory=dict)
+    adaptation: dict[str, Any] | None = None
     duration: str
     estimated_duration_min_range: list[int] | None = None
     rir_guidance: str | None = None
@@ -289,10 +293,15 @@ class DailyRow(ApiModel):
 
 
 class SessionRow(ApiModel):
-    """One completed training session, in the stored product shape."""
+    """One completed training session, in the stored product shape.
+
+    A row sent back by the client may be a *patch*: the browser overlay can carry
+    just ``session_id`` plus the fields it wants to attach (a pre-session snapshot
+    or post-session feedback), and the server merges it onto the seeded session.
+    """
 
     session_id: str
-    date: str
+    date: str | None = None
     training_type: str | None = None
     primary_focus: str | None = None
     muscle_groups: list[str] = Field(default_factory=list)
@@ -430,3 +439,38 @@ class CoachStateRequest(ApiModel):
     state: UserState
     question: str = Field(min_length=1, max_length=1000)
     history: list[CoachTurn] = Field(default_factory=list)
+
+
+# --------------------------------------------------------------------------- #
+# Phase V1.3 — Personal Response
+# --------------------------------------------------------------------------- #
+
+
+class SessionFeedbackRequest(ApiModel):
+    state: UserState
+    session_id: str
+    difficulty: int = Field(ge=1, le=5)
+    performance: int = Field(ge=1, le=5)
+    completion: Literal["Completed", "Modified", "Stopped early"] = "Completed"
+    note: str | None = Field(default=None, max_length=280)
+
+
+class PersonalResponseRequest(ApiModel):
+    state: UserState
+
+
+class PersonalResponseResponse(ApiModel):
+    available: bool
+    base_demand: str | None = None
+    base_band: str | None = None
+    final_demand: str | None = None
+    final_band: str | None = None
+    adjustment: int = 0
+    direction: str = "none"
+    evidence: str | None = None
+    reason: str | None = None
+    detail: str | None = None
+    summary: dict[str, Any] = Field(default_factory=dict)
+    bands: list[dict[str, Any]] = Field(default_factory=list)
+    episodes: list[dict[str, Any]] = Field(default_factory=list)
+    note: str | None = None

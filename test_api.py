@@ -183,7 +183,10 @@ def test_state_today_matches_the_demo_computation(client: TestClient) -> None:
     assert computed["readiness"]["status"] == demo["readiness"]["status"]
     assert computed["readiness"]["index"] == demo["readiness"]["index"]
     assert computed["training"]["recommendation"]["primary_name"] == demo["training"]["recommendation"]["primary_name"]
-    assert len(computed["training"]["decision_trace"]) == 8
+    # V1.3 inserts the PERSONAL RESPONSE step between READINESS and SESSION DEMAND.
+    steps = [row["step"] for row in computed["training"]["decision_trace"]]
+    assert len(steps) == 9
+    assert steps.index("PERSONAL RESPONSE") == steps.index("READINESS") + 1
     assert computed["training"]["exposure"]["unit"] == "weighted working sets"
     assert computed["training"]["recommendation"]["template"]["items"]
     assert computed["training"]["recommendation"]["log_defaults"]["exercises"]
@@ -364,3 +367,140 @@ def test_state_coach_reflects_the_submitted_check_in(client: TestClient) -> None
     ).json()
     assert payload["kind"] == "verified_data"
     assert "3" in payload["answer"]
+
+
+# --------------------------------------------------------------------------- #
+# V1.3 — Adaptive Decision Loop Phase 1
+# --------------------------------------------------------------------------- #
+
+
+def _seeded_state(client: TestClient, case: str = "poor_high_tolerance") -> dict:
+    response = client.get(f"/api/state/base?profile_id=demo-ethan&scenario=Well Recovered Day&response_demo={case}")
+    assert response.status_code == 200
+    return response.json()["state"]
+
+
+def test_today_exposes_base_and_final_demand_with_a_personal_response_step(client: TestClient) -> None:
+    payload = client.post("/api/state/today", json={"state": _seeded_state(client)}).json()["today"]
+    recommendation = payload["training"]["recommendation"]
+    response = payload["personal_response"]
+
+    assert recommendation["base_session_demand"] == "Normal"
+    assert recommendation["session_demand"] == "Reduced / autoregulated"
+    assert recommendation["adaptation"]["label"] == "Adjusted from your recent response"
+    assert recommendation["rir_guidance"] == "2–4 RIR; avoid unnecessary failure"
+    assert response["adjustment"] == -1 and response["base_band"] == "High" and response["final_band"] == "Moderate"
+
+    steps = [row["step"] for row in payload["training"]["decision_trace"]]
+    assert len(steps) == 9
+    assert steps.index("PERSONAL RESPONSE") == steps.index("READINESS") + 1
+    assert steps.index("PERSONAL RESPONSE") == steps.index("SESSION DEMAND") - 1
+    assert "Reduced one step" in payload["training"]["decision_trace"][steps.index("PERSONAL RESPONSE")]["value"]
+
+
+def test_today_without_response_history_does_not_adjust(client: TestClient) -> None:
+    payload = client.post("/api/state/today", json={"state": _base_state(client)}).json()["today"]
+    recommendation = payload["training"]["recommendation"]
+    assert recommendation["adaptation"] is None
+    assert recommendation["base_session_demand"] == recommendation["session_demand"]
+    step = [row for row in payload["training"]["decision_trace"] if row["step"] == "PERSONAL RESPONSE"][0]
+    assert step["value"] == "Not enough history yet"
+
+
+def test_logging_a_session_captures_the_pre_session_snapshot(client: TestClient) -> None:
+    response = client.post(
+        "/api/state/session",
+        json={"state": _seeded_state(client), "duration_min": 50, "session_rpe": 6},
+    ).json()
+    snapshot = response["session"]["response_context"]
+    assert snapshot["base_session_demand"] and snapshot["final_session_demand"]
+    assert snapshot["recommended_focus"]
+    assert snapshot["recommended_duration"] and snapshot["recommended_rir"]
+    assert snapshot["readiness_status"] and "captured_at" in snapshot
+    # The snapshot travels back with the state so the browser can persist it.
+    stored = [row for row in response["state"]["training_history"] if row["session_id"] == response["session"]["session_id"]]
+    assert stored and stored[0]["response_context"]["recommended_focus"] == snapshot["recommended_focus"]
+
+
+def test_post_session_feedback_is_stored_and_recomputed(client: TestClient) -> None:
+    state = _seeded_state(client)
+    logged = client.post("/api/state/session", json={"state": state, "duration_min": 45, "session_rpe": 6}).json()
+    session_id = logged["session"]["session_id"]
+    response = client.post(
+        "/api/state/feedback",
+        json={"state": logged["state"], "session_id": session_id, "difficulty": 4, "performance": 3,
+              "completion": "Modified", "note": "Cut the session short"},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    row = [item for item in payload["state"]["training_history"] if item["session_id"] == session_id][0]
+    assert row["response_feedback"]["difficulty"] == 4
+    assert row["response_feedback"]["completion"] == "Modified"
+    assert row["response_feedback"]["note"] == "Cut the session short"
+    assert payload["today"]["personal_response"]["summary"]["episodes_total"] >= 1
+
+
+def test_feedback_rejects_out_of_range_values(client: TestClient) -> None:
+    state = _seeded_state(client)
+    logged = client.post("/api/state/session", json={"state": state, "duration_min": 45, "session_rpe": 6}).json()
+    session_id = logged["session"]["session_id"]
+    for body in ({"difficulty": 9, "performance": 3}, {"difficulty": 3, "performance": 0}):
+        bad = client.post("/api/state/feedback",
+                          json={"state": logged["state"], "session_id": session_id, **body})
+        assert bad.status_code == 422
+
+
+def test_personal_response_endpoints_expose_the_demo_cases(client: TestClient) -> None:
+    for case, evidence, complete in (("insufficient", "Insufficient", 1), ("emerging", "Emerging", 4),
+                                     ("established_good", "Established", 6)):
+        payload = client.get(f"/api/personal-response?response_demo={case}").json()
+        assert payload["evidence"] == evidence
+        assert payload["summary"]["episodes_complete"] == complete
+    seeded = client.post("/api/state/personal-response", json={"state": _seeded_state(client)}).json()
+    assert seeded["adjustment"] == -1 and seeded["episodes"]
+
+
+def test_coach_answers_personal_response_questions_with_zero_provider_calls(client: TestClient, monkeypatch) -> None:
+    calls: list[str] = []
+
+    def counted_post(url, *args, **kwargs):
+        calls.append(str(url))
+        raise AssertionError("personal response questions must not call the AI provider")
+
+    monkeypatch.setattr(ai_engine.requests, "post", counted_post)
+    state = _seeded_state(client)
+    for question in ("How do I usually respond to high-demand sessions?",
+                     "How many response episodes do I have?",
+                     "Why was today's session adjusted?",
+                     "What happened after my last session?"):
+        payload = client.post("/api/state/coach", json={"state": state, "question": question, "history": []}).json()
+        assert payload["kind"] == "verified_data", question
+        assert payload["ai_used"] is False, question
+        assert payload["answer"]
+    assert calls == []
+
+
+def test_coach_personal_response_answer_reports_the_pattern(client: TestClient) -> None:
+    state = _seeded_state(client)
+    payload = client.post(
+        "/api/state/coach",
+        json={"state": state, "question": "How do I usually respond to high-demand sessions?", "history": []},
+    ).json()
+    assert "High demand" in payload["answer"]
+    assert "harder to recover from" in payload["answer"]
+    assert "not a recovery measurement" in payload["answer"]
+
+
+def test_red_readiness_cannot_be_overridden_by_personal_response(client: TestClient) -> None:
+    state = _seeded_state(client)
+    payload = client.post(
+        "/api/state/check-in",
+        json={"state": state, "check_in": {"date": "2026-09-17", "rmssd_ms": 40.0, "resting_hr_bpm": 62,
+                                          "sleep_hours": 5.0, "sleep_quality": 2, "fatigue": 5, "soreness": 4,
+                                          "stress": 4, "motivation": 2}},
+    ).json()
+    recommendation = payload["today"]["training"]["recommendation"]
+    response = payload["today"]["personal_response"]
+    assert payload["today"]["readiness"]["status"] in {"RED", "AMBER", "STOP / PROFESSIONAL REVIEW"}
+    assert response["adjustment"] <= 0
+    assert recommendation["base_session_demand"] == recommendation["session_demand"] or response["adjustment"] == -1

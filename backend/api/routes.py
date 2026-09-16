@@ -7,7 +7,7 @@ threshold, formula or recommendation rule is implemented in this file.
 from __future__ import annotations
 
 from datetime import date, datetime, timezone
-from typing import Any
+from typing import Any, Mapping
 
 import ai_engine
 from fastapi import APIRouter, HTTPException, Query
@@ -24,6 +24,8 @@ from backend.schemas.models import (
     HealthResponse,
     InsightsRequest,
     InsightsResponse,
+    PersonalResponseRequest,
+    PersonalResponseResponse,
     ProfileSummary,
     ProfileEditRequest,
     ProfileOptionsResponse,
@@ -34,14 +36,15 @@ from backend.schemas.models import (
     ScenarioListResponse,
     SessionLogRequest,
     SessionLogResponse,
+    SessionFeedbackRequest,
     StateEnvelope,
     StateRequest,
     TodayResponse,
     TrainingRecommendationSummary,
     WeeklyExposure,
 )
-from backend.services import (coach_service, demo_service, insights_service, readiness_service, science_service,
-                              state_service, training_service)
+from backend.services import (coach_service, demo_service, insights_service, readiness_service, response_service,
+                              science_service, state_service, training_service)
 
 router = APIRouter(prefix="/api")
 
@@ -70,18 +73,29 @@ def _context(profile_id: str | None, check_in: dict[str, Any] | None = None):
     return profile, assessment, recommendation
 
 
-def _today_payload(profile: dict[str, Any], assessment: dict[str, Any], recommendation: dict[str, Any]) -> dict[str, Any]:
-    """One Today payload shape, shared by the demo and state endpoints."""
+def _today_payload(profile: dict[str, Any], assessment: dict[str, Any],
+                   recommendation: dict[str, Any]) -> dict[str, Any]:
+    """One Today payload shape, shared by the demo and state endpoints.
+
+    V1.3 adds the bounded Personal Response layer on top of the engine's base
+    decision: the base recommendation is preserved, the final one is what the
+    product presents, and the Decision Trace shows the extra step.
+    """
+    decision = response_service.evaluate(profile, assessment, recommendation)
+    base_summary = training_service.summary(recommendation)
+    summary = response_service.apply_to_summary(base_summary, decision, base_summary.get("rir_guidance"))
+    trace = response_service.apply_to_trace(training_service.decision_trace(recommendation), decision)
     readiness_payload = readiness_service.summary(profile, assessment)
     return {
         "profile": _profile_summary(profile),
         "readiness": readiness_payload,
         "training": {
-            "recommendation": training_service.summary(recommendation),
-            "decision_trace": training_service.decision_trace(recommendation),
+            "recommendation": summary,
+            "decision_trace": trace,
             "exposure": training_service.exposure(profile, assessment, recommendation),
             "history": training_service.recent_sessions(profile, 8),
         },
+        "personal_response": response_service.payload(decision),
         "why": {
             "headline": readiness_payload.get("explanation") or "Readiness and recent training drive today's session.",
             "rationale": list(recommendation.get("rationale") or []),
@@ -100,6 +114,34 @@ def _state_context(state) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any
     assessment = readiness_service.assess(profile, draft)
     recommendation = training_service.recommend(profile, assessment)
     return profile, assessment, recommendation, draft
+
+
+def _response_decision(profile: dict[str, Any], assessment: dict[str, Any],
+                       recommendation: dict[str, Any]) -> dict[str, Any]:
+    return response_service.evaluate(profile, assessment, recommendation)
+
+
+def _snapshot(profile: dict[str, Any], assessment: dict[str, Any], recommendation: dict[str, Any],
+              decision: Mapping[str, Any], payload: Mapping[str, Any]) -> dict[str, Any]:
+    """Compact pre-session snapshot captured when a session is logged."""
+    recommendation_summary = dict((payload.get("training") or {}).get("recommendation") or {})
+    exposure = recommendation.get("weekly_exposure") or {}
+    groups = sorted(((str(key), float(value)) for key, value in exposure.items()), key=lambda item: -item[1])
+    return {
+        "captured_at": datetime.now(timezone.utc).isoformat(),
+        "readiness_status": assessment.get("overall_readiness"),
+        "readiness_index": assessment.get("readiness_index"),
+        "readiness_confidence": assessment.get("assessment_confidence"),
+        "base_session_demand": decision.get("base_demand"),
+        "final_session_demand": decision.get("final_demand"),
+        "adjustment": decision.get("adjustment", 0),
+        "recommended_focus": recommendation_summary.get("primary_name"),
+        "recommended_duration": recommendation_summary.get("duration"),
+        "recommended_rir": recommendation_summary.get("rir_guidance"),
+        "local_soreness": dict((assessment.get("today_data") or {}).get("local_soreness") or {}),
+        "exposure_note": (f"{groups[0][0]} {groups[0][1]:g} / "
+                          f"{(recommendation.get('weekly_targets') or {}).get(groups[0][0], 0):g} sets") if groups else None,
+    }
 
 
 def _profile_summary(profile: dict[str, Any]) -> dict[str, Any]:
@@ -232,8 +274,12 @@ def scenarios() -> dict[str, Any]:
 
 @router.get("/state/base", response_model=BaseStateResponse)
 def state_base(profile_id: str | None = Query(default=None),
-               scenario: str | None = Query(default=None)) -> dict[str, Any]:
+               scenario: str | None = Query(default=None),
+               response_demo: str | None = Query(default=None)) -> dict[str, Any]:
     profile, state = state_service.base_state(profile_id, scenario)
+    if response_demo:
+        seeded = state_service.seed_demo_responses(state_service.UserState(**state), response_demo)
+        state = seeded.model_dump()
     return {
         "state": state,
         "profile": _profile_summary(profile),
@@ -271,6 +317,8 @@ def state_profile(payload: ProfileEditRequest) -> dict[str, Any]:
 @router.post("/state/session", response_model=SessionLogResponse)
 def state_session(payload: SessionLogRequest) -> dict[str, Any]:
     profile, assessment, rec, _ = _state_context(payload.state)
+    decision = _response_decision(profile, assessment, rec)
+    snapshot_payload = _today_payload(profile, assessment, rec)
     selected = training_service.find_session(rec, payload.prescription_id)
     defaults = prescription_log_defaults(selected)
     exercises = payload.exercises or [
@@ -292,6 +340,11 @@ def state_session(payload: SessionLogRequest) -> dict[str, Any]:
         "notes": payload.notes or "",
     }
     new_state, session = state_service.apply_session(payload.state, details)
+    # Capture the compact pre-session snapshot on the logged session.
+    snapshot = _snapshot(profile, assessment, rec, decision, snapshot_payload)
+    session = {**session, "response_context": snapshot}
+    new_state = state_service.upsert_session_overlay(new_state, str(session["session_id"]),
+                                                     {"response_context": snapshot})
     updated_profile, updated_assessment, updated_rec, _ = _state_context(new_state)
     return {
         "state": new_state,
@@ -305,8 +358,48 @@ def state_session(payload: SessionLogRequest) -> dict[str, Any]:
 @router.post("/state/coach", response_model=CoachMessageResponse)
 def state_coach(payload: CoachStateRequest) -> dict[str, Any]:
     profile, assessment, rec, _ = _state_context(payload.state)
+    # Personal Response facts are answered deterministically, so they never reach
+    # the AI provider (the AI-01 grounding contract).
+    deterministic = response_service.answer_question(payload.question, _response_decision(profile, assessment, rec))
+    if deterministic:
+        return coach_service.verified_answer(deterministic, "Answered from your recorded data. No model wording was used.")
     history = [{"role": turn.role, "content": turn.content} for turn in payload.history]
     return coach_service.answer(payload.question, profile, assessment, rec, history)
+
+
+@router.post("/state/feedback", response_model=StateEnvelope)
+def state_feedback(payload: SessionFeedbackRequest) -> dict[str, Any]:
+    """Lightweight post-session feedback; adds meaning beyond session RPE."""
+    new_state = state_service.upsert_session_overlay(payload.state, payload.session_id, {
+        "response_feedback": {
+            "difficulty": payload.difficulty,
+            "performance": payload.performance,
+            "completion": payload.completion,
+            "note": payload.note or "",
+            "submitted_at": datetime.now(timezone.utc).isoformat(),
+        }
+    })
+    profile, assessment, rec, _ = _state_context(new_state)
+    return {"state": new_state, "today": _today_payload(profile, assessment, rec)}
+
+
+@router.post("/state/personal-response", response_model=PersonalResponseResponse)
+def state_personal_response(payload: PersonalResponseRequest) -> dict[str, Any]:
+    profile, assessment, rec, _ = _state_context(payload.state)
+    return response_service.payload(_response_decision(profile, assessment, rec))
+
+
+@router.get("/personal-response", response_model=PersonalResponseResponse)
+def personal_response(profile_id: str | None = Query(default=None),
+                      response_demo: str | None = Query(default=None)) -> dict[str, Any]:
+    """Read-only Personal Response view of a demo profile."""
+    profile = _profile_or_404(profile_id)
+    state = state_service.UserState(profile_id=str(profile["user_id"]),
+                                    scenario=state_service.default_scenario(profile))
+    if response_demo:
+        state = state_service.seed_demo_responses(state, response_demo)
+    full_profile, assessment, rec, _ = _state_context(state)
+    return response_service.payload(_response_decision(full_profile, assessment, rec))
 
 
 @router.post("/state/insights", response_model=InsightsResponse)
