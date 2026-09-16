@@ -65,7 +65,7 @@ Storage
 | `test_app.py` | 114 个 regression tests（唯一测试文件） |
 | `scripts/design_system_preview.py` | 开发用设计系统预览（不是产品页面） |
 | `scripts/deepseek_smoke.py` | 手工 live QA（唯一允许真实调用 API 的地方，不属于 pytest） |
-| `docs/*.md` | baseline、UX audit、mobile shell、design system、AI grounding、DeepSeek migration、本 handoff |
+| `docs/*.md` | baseline、UX audit、mobile shell、design system、AI grounding、DeepSeek migration、science reference audit、本 handoff |
 
 # Readiness Engine
 
@@ -155,6 +155,24 @@ Decision Trace **不是** LLM chain-of-thought，也不是 debug log；它是产
 * `How much have I trained back this week?` 及所有 personal factual / correction 轮次对 provider 的调用数必须为 **0**。
 * 模型草稿若新增未记录数字、改单位、改周期、替换 primary recommendation 或编造 rationale，必须被 guard 拦截。
 
+# Science & References（V1.1 audit，2026-09-16）
+
+* 参考书目 **12 → 13 篇**（新增 Buchheit 2014 · PMID 24578692 · DOI 10.3389/fphys.2014.00073），
+  **0 篇移除、7 篇修正、0 篇无法验证**。全部 13 篇的题录经 PubMed、Europe PMC、Crossref 三方核验，
+  13 个 DOI 均由 Crossref 解析无误。
+* 主要修正：Schoenfeld 2019 的**截短标题**补回官方完整标题（volume-equated 语义关键）；
+  Schoenfeld 2017 标题大小写；Bourdon / Greig / Zhang / Robinson / Düking 的 "et al." 补全为完整作者列表；
+  全部条目补充已验证 DOI。
+* 每篇参考新增 **DOI 链接**，Science & Logic 页新增 **Evidence boundaries** 区块。
+* 声明分类：A 直接支持 8 · B 证据知情的解释 6 · C 产品启发式 13 · **D 过度声明 0**。
+* 产品启发式清单（阈值带、domain 聚合、Readiness Index 映射、7/21 天 load 窗口、session-demand 映射、
+  RIR 区间、fractional set 权重、exposure 窗口、recommendation 顺序、safety routing）全部在审计文档中
+  逐条标注为 **未直接验证**。
+* 详细表格见 `docs/V1_1_SCIENCE_REFERENCE_AUDIT.md`（含 per-reference 状态、"supports / does not support"、
+  Product Heuristic Inventory、Claim → Source Matrix、剩余科学局限）。
+* **本轮未改动任何 engine**：`readiness_engine.py`、`training_recommendation_engine.py`、
+  training load / exposure 逻辑、thresholds、Decision Trace、safety logic、AI router、grounding guard 全部原样。
+
 # AI-01（历史关键 bug 与修复）
 
 **原始错误：** 用户问 `How much have I trained back this week?`，模型回答 “trained back for 12 days this week”，
@@ -225,7 +243,7 @@ Decision Trace **不是** LLM chain-of-thought，也不是 debug log；它是产
 
 # Test Baseline
 
-`python -m compileall .` → PASS；`python -m pytest -v` → **133 / 133 passed**。
+`python -m compileall .` → PASS；`python -m pytest -v` → **139 / 139 passed**。
 
 关键 regression 区域：mobile shell 间距契约与 chrome 选择器 · Today 首屏（Readiness / Training / Session Demand / CTA）·
 Train 的 primary 与 alternatives 层级 + 8 步 decision trace · 档案切换与 Demo/Local 隔离 · IndexedDB 写入/刷新/恢复 ·
@@ -370,6 +388,6 @@ Apple Health / Garmin / WHOOP / Oura 属于后期数据入口，核心价值是*
 5. 确认最新 baseline（branch / commit / tests）。
 6. `python -m compileall .`
 7. `python -m pytest -v`
-8. 确认 test baseline（当前应为 133 passed）。
+8. 确认 test baseline（当前应为 139 passed）。
 9. **不要修改任何代码。**
 10. 先汇报理解，然后等待用户的下一条指令。
