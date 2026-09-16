@@ -25,7 +25,7 @@ from profile_store import (create_profile, delete_profile, generate_sample_histo
 from readiness_engine import (AMBER, BASELINE_LIMITED_DAYS, BASELINE_NORMAL_DAYS, GREEN, INSUFFICIENT, RED,
                               SAFETY_FLAGS, assess_readiness, ln_rmssd)
 from styles import inject_styles
-from science_content import EVIDENCE_LABELS, EVIDENCE_MAP, LIMITATIONS, READINESS_RULE_METADATA, RECOMMENDATION_RULE_METADATA, REFERENCES
+from science_content import EVIDENCE_BOUNDARIES, EVIDENCE_LABELS, EVIDENCE_MAP, LIMITATIONS, READINESS_RULE_METADATA, RECOMMENDATION_RULE_METADATA, REFERENCES
 from training_recommendation_engine import MUSCLE_GROUPS, prescription_log_defaults, recommend_training, workout_template
 from ui_components import (PRIMARY_NAV_ITEMS, SECONDARY_NAV_ITEMS, callout,
                            coach_context_surface, coach_suggestions, decision_trace_section, detail_row,
@@ -906,9 +906,8 @@ def render_profile(profile: dict[str, Any]) -> None:
 def render_science_logic() -> None:
     page_intro("SCIENCE & LOGIC", "How the system works", "How Personal Readiness turns longitudinal data into an evidence-informed daily training decision.")
     st.subheader("Evidence boundaries")
-    st.write("This prototype is evidence-informed, not clinically validated. Published research informs which monitoring signals are collected and how they are interpreted: self-reported wellness, session-RPE training load, resistance-training volume and frequency, autoregulation, proximity to failure, and HRV-guided training.")
-    st.write("The application's own readiness thresholds, domain aggregation rules, Readiness Index scale, training-load comparison windows, session-demand mapping, RIR ranges and recommendation order are transparent product heuristics. They are deliberately inspectable and adjustable, and they have not been prospectively validated as clinical, performance-prediction or injury-prediction thresholds.")
-    st.write("The table further down states, for each concept, whether the literature supports the broader principle or whether the exact rule is a prototype heuristic.")
+    for paragraph in EVIDENCE_BOUNDARIES:
+        st.write(paragraph)
     st.subheader("System overview")
     steps = ("PERSONAL BASELINE", "DAILY CHECK-IN", "FOUR READINESS DOMAINS", "SAFETY SCREEN", "OVERALL READINESS", "TRAINING HISTORY", "WEEKLY TRAINING EXPOSURE", "GOAL + SPLIT", "LOCAL SORENESS", "SESSION DEMAND", "TODAY'S TRAINING RECOMMENDATION")
     st.markdown(" → ".join(f"**{step}**" for step in steps))

@@ -12,6 +12,15 @@ EVIDENCE_LABELS = {
     "not_clinical": "NOT A CLINICAL THRESHOLD",
 }
 
+#: Single source for the user-facing Evidence boundaries copy. Rendered by the
+#: Streamlit Science & Logic page and served by the API, so both surfaces say
+#: exactly the same thing.
+EVIDENCE_BOUNDARIES = (
+    "This prototype is evidence-informed, not clinically validated. Published research informs which monitoring signals are collected and how they are interpreted: self-reported wellness, session-RPE training load, resistance-training volume and frequency, autoregulation, proximity to failure, and HRV-guided training.",
+    "The application's own readiness thresholds, domain aggregation rules, Readiness Index scale, training-load comparison windows, session-demand mapping, RIR ranges and recommendation order are transparent product heuristics. They are deliberately inspectable and adjustable, and they have not been prospectively validated as clinical, performance-prediction or injury-prediction thresholds.",
+    "The table further down states, for each concept, whether the literature supports the broader principle or whether the exact rule is a prototype heuristic.",
+)
+
 EVIDENCE_MAP = {
     "subjective_monitoring": {"concept": "Subjective wellness monitoring", "evidence": "Systematic review", "implementation": "Fatigue, stress, soreness and motivation form the Subjective Wellness domain.", "label": EVIDENCE_LABELS["principle"], "pmids": ["26423706"]},
     "session_rpe": {"concept": "Session-RPE training load", "evidence": "Consensus statement and review", "implementation": "Completed-session duration × session RPE; same-date sessions are summed, then mean daily load across 7 complete calendar days is compared with the preceding 21. Tracked rest days are 0 AU; missing dates remain unknown. The comparison window itself is an implementation choice, not a validated monitoring window.", "label": EVIDENCE_LABELS["principle"], "pmids": ["28463642", "29163016"]},
