@@ -75,6 +75,20 @@
   }
 }
 
+/*
+ * Mobile Safari zooms the whole page when a focused form control renders below
+ * 16px. Every control is 16px on small screens and returns to the denser
+ * desktop size above the md breakpoint, which keeps the layout untouched and
+ * avoids the usual maximum-scale hack.
+ */
+@media (max-width: 767px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+
 /* Typographic scale: one hero number, one title level, calm body, quiet meta. */
 @utility display-hero {
   font-size: clamp(3.4rem, 13vw, 4.5rem);

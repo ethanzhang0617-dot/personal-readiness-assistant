@@ -263,22 +263,20 @@ export function CheckInView() {
           {muscles.map((muscle) => (
             <label key={muscle} className="flex min-h-11 items-center justify-between gap-2">
               <span className="min-w-0 truncate text-[0.8rem]">{muscle}</span>
-              <span className="flex min-h-9 w-16 items-center rounded-[var(--radius-control)] border border-subtle bg-surface px-2">
-                <select
-                  aria-label={`${muscle} soreness`}
-                  value={form.local_soreness[muscle] ?? 0}
-                  onChange={(event) =>
-                    setField("local_soreness", { ...form.local_soreness, [muscle]: Number(event.target.value) })
-                  }
-                  className="w-full bg-transparent text-[0.8rem] outline-none"
-                >
-                  {[0, 1, 2, 3, 4, 5].map((value) => (
-                    <option key={value} value={value}>
-                      {value}
-                    </option>
-                  ))}
-                </select>
-              </span>
+              <select
+                aria-label={`${muscle} soreness`}
+                value={form.local_soreness[muscle] ?? 0}
+                onChange={(event) =>
+                  setField("local_soreness", { ...form.local_soreness, [muscle]: Number(event.target.value) })
+                }
+                className="h-11 w-16 rounded-[var(--radius-control)] border border-subtle bg-surface px-2 text-[0.8rem] md:h-9"
+              >
+                {[0, 1, 2, 3, 4, 5].map((value) => (
+                  <option key={value} value={value}>
+                    {value}
+                  </option>
+                ))}
+              </select>
             </label>
           ))}
         </div>

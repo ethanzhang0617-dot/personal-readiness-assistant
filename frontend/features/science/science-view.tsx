@@ -34,7 +34,7 @@ export async function ScienceView() {
     <div className="space-y-6">
       <Link
         href="/profile"
-        className="inline-flex min-h-9 items-center gap-1.5 text-[0.75rem] text-muted transition-colors hover:text-foreground"
+        className="inline-flex min-h-11 items-center gap-1.5 text-[0.75rem] text-muted transition-colors hover:text-foreground md:min-h-9"
       >
         <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
         Profile
@@ -51,7 +51,7 @@ export async function ScienceView() {
           <a
             key={item.href}
             href={item.href}
-            className="shrink-0 rounded-full border border-subtle bg-surface px-3 py-1.5 text-[0.75rem] font-medium text-muted transition-colors hover:text-foreground"
+            className="flex min-h-11 shrink-0 items-center rounded-full border border-subtle bg-surface px-3.5 text-[0.78rem] font-medium text-muted transition-colors hover:text-foreground md:min-h-9"
           >
             {item.label}
           </a>
@@ -94,7 +94,7 @@ export async function ScienceView() {
                         href={`https://pubmed.ncbi.nlm.nih.gov/${pmid}/`}
                         target="_blank"
                         rel="noreferrer"
-                        className="underline decoration-dotted underline-offset-2"
+                        className="inline-block py-1 underline decoration-dotted underline-offset-2"
                       >
                         PMID {pmid}
                       </a>
@@ -235,7 +235,7 @@ export async function ScienceView() {
                     href={reference.pubmed_url}
                     target="_blank"
                     rel="noreferrer"
-                    className="inline-flex items-center gap-1 underline decoration-dotted underline-offset-2"
+                    className="inline-flex items-center gap-1 py-1 underline decoration-dotted underline-offset-2"
                   >
                     PMID {reference.pmid}
                     <ExternalLink className="h-3 w-3" aria-hidden />
@@ -245,7 +245,7 @@ export async function ScienceView() {
                       href={reference.doi_url}
                       target="_blank"
                       rel="noreferrer"
-                      className="inline-flex items-center gap-1 underline decoration-dotted underline-offset-2"
+                      className="inline-flex items-center gap-1 py-1 underline decoration-dotted underline-offset-2"
                     >
                       DOI
                       <ExternalLink className="h-3 w-3" aria-hidden />

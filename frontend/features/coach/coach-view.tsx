@@ -205,7 +205,7 @@ export function CoachView() {
             <button
               type="button"
               onClick={() => void clearChat()}
-              className="min-h-8 text-[0.7rem] text-muted underline decoration-dotted underline-offset-2"
+              className="min-h-11 px-1 text-[0.72rem] text-muted underline decoration-dotted underline-offset-2 md:min-h-9"
             >
               Clear conversation
             </button>

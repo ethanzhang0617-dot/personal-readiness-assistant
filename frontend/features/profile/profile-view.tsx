@@ -33,7 +33,9 @@ function SelectField({
       <select
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="mt-1.5 min-h-11 w-full rounded-[var(--radius-control)] border border-subtle bg-surface px-3 text-sm"
+        /* A fixed height rather than min-height: WebKit ignores min-height on a
+           native select, which leaves Safari with a 23px control. */
+        className="mt-1.5 h-11 w-full rounded-[var(--radius-control)] border border-subtle bg-surface px-3 text-sm md:h-10"
       >
         {(options ?? []).map((option) => (
           <option key={option} value={option}>
@@ -65,7 +67,7 @@ function NumberField({
   return (
     <label className="block">
       <span className="text-[0.75rem] text-muted">{label}</span>
-      <span className="mt-1.5 flex min-h-11 items-center rounded-[var(--radius-control)] border border-subtle bg-surface px-3">
+      <span className="relative mt-1.5 block">
         <input
           type="number"
           min={min}
@@ -73,9 +75,13 @@ function NumberField({
           step={step}
           value={value}
           onChange={(event) => onChange(Number(event.target.value))}
-          className="w-full bg-transparent text-sm outline-none"
+          className="min-h-11 w-full rounded-[var(--radius-control)] border border-subtle bg-surface px-3 pr-14 text-sm tabular-nums outline-none"
         />
-        {suffix ? <span className="ml-1 shrink-0 text-[0.75rem] text-muted">{suffix}</span> : null}
+        {suffix ? (
+          <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[0.75rem] text-muted">
+            {suffix}
+          </span>
+        ) : null}
       </span>
     </label>
   );
@@ -248,19 +254,17 @@ export function ProfileView() {
           {(options?.muscle_groups ?? []).map((group) => (
             <label key={group} className="flex items-center justify-between gap-2">
               <span className="text-[0.8rem]">{group}</span>
-              <span className="flex min-h-10 w-20 items-center rounded-[var(--radius-control)] border border-subtle bg-surface px-2">
-                <input
-                  type="number"
-                  min={0}
-                  max={40}
-                  aria-label={`${group} weekly target`}
-                  value={targets[group] ?? 0}
-                  onChange={(event) =>
-                    setTargetDraft((current) => ({ ...current, [group]: Number(event.target.value) || 0 }))
-                  }
-                  className="w-full bg-transparent text-right text-[0.8rem] outline-none"
-                />
-              </span>
+              <input
+                type="number"
+                min={0}
+                max={40}
+                aria-label={`${group} weekly target`}
+                value={targets[group] ?? 0}
+                onChange={(event) =>
+                  setTargetDraft((current) => ({ ...current, [group]: Number(event.target.value) || 0 }))
+                }
+                className="min-h-11 w-20 rounded-[var(--radius-control)] border border-subtle bg-surface px-2 text-right text-[0.8rem] tabular-nums md:min-h-10"
+              />
             </label>
           ))}
         </div>

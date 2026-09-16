@@ -31,7 +31,7 @@ export function ProfileSwitcher() {
               setMessage(result.ok ? `Active profile: ${profile.name}` : result.error ?? null);
             }}
             className={cn(
-              "min-h-9 rounded-full border px-3 text-[0.75rem] font-medium transition-colors",
+              "min-h-11 rounded-full border px-3.5 text-[0.78rem] font-medium transition-colors md:min-h-9",
               profile.user_id === profileId
                 ? "border-transparent bg-primary text-primary-foreground"
                 : "border-subtle bg-surface text-muted",

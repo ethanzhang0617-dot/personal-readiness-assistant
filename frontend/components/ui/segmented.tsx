@@ -39,7 +39,9 @@ export function Segmented<T extends string | number>({
             onClick={() => onChange(option.value)}
             className={cn(
               "flex-1 rounded-[0.6rem] font-semibold transition-colors",
-              size === "md" ? "min-h-11" : "min-h-9",
+              // Touch targets stay 44px on small screens; the compact size is a
+              // desktop-only density choice.
+              size === "md" ? "min-h-11" : "min-h-11 md:min-h-9",
               active ? "bg-primary text-primary-foreground" : "text-muted hover:bg-subtle/60",
             )}
           >

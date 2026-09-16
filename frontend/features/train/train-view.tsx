@@ -272,7 +272,7 @@ export function TrainView() {
                     onChange={(event) =>
                       setActualSets((current) => ({ ...current, [exercise.name]: Number(event.target.value) || 0 }))
                     }
-                    className="min-h-10 w-20 rounded-[var(--radius-control)] border border-subtle bg-surface px-2 text-right text-[0.8rem]"
+                    className="min-h-11 w-20 rounded-[var(--radius-control)] border border-subtle bg-surface px-2 text-right text-[0.8rem] md:min-h-10"
                   />
                 </label>
               ))}

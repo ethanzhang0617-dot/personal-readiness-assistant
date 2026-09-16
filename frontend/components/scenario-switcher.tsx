@@ -34,7 +34,7 @@ export function ScenarioSwitcher() {
           const result = await setScenario(event.target.value);
           setMessage(result.ok ? result.message ?? null : result.error ?? null);
         }}
-        className="mt-2 min-h-11 w-full rounded-[var(--radius-control)] border border-subtle bg-surface px-3 text-sm"
+        className="mt-2 h-11 w-full rounded-[var(--radius-control)] border border-subtle bg-surface px-3 text-sm"
       >
         {options.map((name) => (
           <option key={name} value={name}>

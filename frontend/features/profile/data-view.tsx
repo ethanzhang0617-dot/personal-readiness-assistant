@@ -105,7 +105,7 @@ export function DataView() {
     <div className="space-y-5">
       <Link
         href="/profile"
-        className="inline-flex min-h-9 items-center gap-1.5 text-[0.75rem] text-muted transition-colors hover:text-foreground"
+        className="inline-flex min-h-11 items-center gap-1.5 text-[0.75rem] text-muted transition-colors hover:text-foreground md:min-h-9"
       >
         <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
         Profile
