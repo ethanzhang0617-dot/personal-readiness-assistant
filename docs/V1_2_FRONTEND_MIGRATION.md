@@ -1,7 +1,12 @@
 # V1.2 — Frontend Architecture Migration (Phase 1)
 
 **Branch:** `v1.2-nextjs-migration` (created from `v1.1-productization` at `0c42048`)
-**Status:** Phase 1 scaffold complete, local only, **not pushed**
+**Status:** Phase 1 pushed (`84fee69`). Phase 2 functional parity complete locally, **not pushed**.
+
+> Phase 2 adds the write path: morning check-in, completed-session logging, profile and weekly-target
+> editing, demo scenario and profile switching, browser-local persistence with export/import,
+> trend charts, and per-profile Coach history. See `docs/V1_2_FUNCTIONAL_PARITY.md` for the
+> Streamlit-versus-Next.js checklist.
 
 ## 1. Goal
 
@@ -165,11 +170,89 @@ Quality gates: `pnpm typecheck`, `pnpm lint`, `pnpm build`.
 
 ## 11. Next migration steps (not started)
 
-1. Extract `SCENARIOS` / `scenario_values` / `rir_guidance` into a Streamlit-free module so the API
-   no longer imports `app.py`.
-2. Add history endpoints (per-day HRV, resting HR, sleep, load) to reach Insights parity.
-3. Add check-in submission and completed-session logging to the web client, with an explicit
-   decision about where user data lives after the migration.
-4. Reach Train/Profile functional parity, then run a deliberate UI polish pass on the new client.
-5. Only after parity: decide the long-term status of the Streamlit app (retire or keep as a
+1. Add the remaining PARTIAL items listed in `docs/V1_2_FUNCTIONAL_PARITY.md` (chart tooltips,
+   "sessions in the last 14 days", two-step import confirmation, a dedicated About route).
+2. Decide whether local multi-profile accounts (create/delete a local profile) move to the web
+   client or stay Streamlit-only.
+3. Run a deliberate UI polish pass on the new client.
+4. Only after that: decide the long-term status of the Streamlit app (retire or keep as a
    diagnostic surface).
+
+---
+
+# Phase 2 — Functional Parity (implemented)
+
+## Architecture change: the browser owns the state
+
+Phase 1 read fixed demo profiles from the API. Phase 2 moves the user's own data into the browser
+and turns the API into a **stateless compute + explain layer**:
+
+```text
+IndexedDB (per profile: check-ins, logged sessions, profile edits, chat)
+        │  state sent with every compute request
+        ▼
+POST /api/state/{today,check-in,profile,session,coach,insights}
+        │  materialise → engines → JSON
+        ▼
+readiness_engine · training_recommendation_engine · ai_facts · ai_engine · profile_store helpers
+```
+
+Materialising a request means: seeded demo profile → apply profile edits (`update_profile`) →
+upsert the user's daily rows (`upsert_daily_metric`) → append the user's logged session rows (as
+produced by `log_training_session`). Nothing is re-implemented, and no server-side database is
+introduced.
+
+## New endpoints
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/scenarios` | scenario names, their simulated values, safety flags and the muscle taxonomy |
+| `GET /api/profile/options` | the product's own goal / level / split / activity / sex lists |
+| `GET /api/state/base` | seeded state for a demo profile, ready for the client to own |
+| `POST /api/state/today` | readiness + recommendation + exposure + history + decision trace from the supplied state |
+| `POST /api/state/check-in` | apply a check-in, recompute, return the updated state |
+| `POST /api/state/profile` | apply profile edits and weekly targets, recompute |
+| `POST /api/state/session` | log a completed session through the product's logging function |
+| `POST /api/state/coach` | Coach answer from the supplied state |
+| `POST /api/state/insights` | per-day series, load summary, exposure and readiness history |
+| `GET /api/science/logic` | threshold table, overall rule, decision order and example decision |
+
+## Frontend additions
+
+* `/check-in` — the full morning check-in with units, validation, local soreness and the safety screen.
+* Train — session switcher (primary + alternatives), engine workout template, weekly exposure,
+  recent sessions, and a completed-session form pre-filled from the prescription.
+* Insights — window selector, four trend charts (solid value line, dashed 7-check-in mean, dotted
+  personal baseline), load summary, exposure and readiness history.
+* Profile — editable profile fields and weekly targets, baseline panel, demo scenario and profile
+  switchers.
+* Profile → Data — data sources (wearables explicitly "not connected"), AI/privacy wording,
+  export/import/clear, and the About copy.
+* Coach — conversation persisted per profile in IndexedDB; starters reworded so they hit the
+  deterministic fact path (the router is a protected contract).
+* `lib/store.ts` (IndexedDB envelope v2, per-profile maps) and `lib/state-provider.tsx` (one source
+  of truth for every page).
+
+## Phase 2 verification
+
+* Python: `compileall` PASS; `pytest` → **161 / 161 PASS** (149 before + 12 new API tests).
+* Frontend: `pnpm typecheck` PASS, `pnpm lint` PASS (no findings), `pnpm build` PASS.
+* End-to-end browser flow at 390 × 844: **20 / 20 checks** (Today → check-in → Today update →
+  Train → log session → history/exposure update → Insights charts → Coach factual + explanation →
+  profile edit → reload persistence), plus a log-button check confirming no control hides under the
+  bottom navigation.
+* Profile switching: **6 / 6 checks** (switch to Alex, Today follows, survives reload, switch back).
+* Visual QA: 8 routes × 2 viewports → **0 px horizontal overflow everywhere**, bottom navigation
+  73 px with a safe-area floor, Today CTA above the fold (661–713 px against a 771 px navigation
+  top), desktop content column capped at 864 px.
+
+## Phase 2 known limitations
+
+1. Two processes must run (FastAPI + Next.js). Without the API every page shows an explicit
+   "API unavailable" state rather than crashing.
+2. Import replaces the whole local envelope; the reference app's validate-then-confirm step is not
+   reproduced.
+3. Charts are dependency-free SVG: correct data and gaps, but no hover tooltips.
+4. Local multi-profile account management (create/delete a local profile) and the demo
+   "regenerate history" tool remain Streamlit-only.
+5. Storage schema version 2 replaced version 1; an older local envelope is discarded and reseeded.

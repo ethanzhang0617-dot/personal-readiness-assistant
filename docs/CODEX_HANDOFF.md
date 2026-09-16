@@ -155,10 +155,30 @@ Decision Trace **不是** LLM chain-of-thought，也不是 debug log；它是产
 * `How much have I trained back this week?` 及所有 personal factual / correction 轮次对 provider 的调用数必须为 **0**。
 * 模型草稿若新增未记录数字、改单位、改周期、替换 primary recommendation 或编造 rationale，必须被 guard 拦截。
 
-# Frontend Migration Status（V1.2 Phase 1，本地未 push）
+# Frontend Migration Status（V1.2 Phase 2 已完成功能 parity，本地未 push）
 
-* 分支：`v1.2-nextjs-migration`（自 `v1.1-productization` 的 `0c42048` 创建）。**Streamlit V1.1 未被修改**，
-  仍可运行，仍是 reference implementation。
+* 分支：`v1.2-nextjs-migration`（自 `v1.1-productization` 的 `0c42048` 创建）。Phase 1 已推送（`84fee69`）。
+  **Streamlit V1.1 未被删除、仍可运行**，仍是 reference implementation。
+* **Phase 2 起，用户自己的数据由浏览器持有**（IndexedDB，按 profile 分开存储），API 变成**无状态计算层**：
+  客户端把 state 随请求发出，服务端 materialise 后调用现有引擎，不落任何服务端数据库。
+* Phase 2 新增端点：`GET /api/scenarios` · `/api/profile/options` · `/api/state/base` · `/api/science/logic`；
+  `POST /api/state/today` · `/api/state/check-in` · `/api/state/profile` · `/api/state/session` ·
+  `/api/state/coach` · `/api/state/insights`。
+* 网页端新增：`/check-in`（完整晨检，含单位、校验、局部酸痛、safety 屏）、Train 的 session 切换 +
+  workout template + 完成训练记录、Insights 趋势图（window 7/28/all + 4 条曲线 + 基线），
+  Profile 可编辑 + 周目标 + demo 场景/档案切换、Profile → Data（数据来源、隐私、导入导出、About）。
+* 两处纯数据抽取，使 API 不再 import Streamlit：`scenario_data.py`（SCENARIOS + `scenario_values`）、
+  `product_options.py`（goal/level/split/activity/sex 选项）。`app.py` 改为 import 这两者，行为不变。
+* Coach 契约不变：事实性/纠正轮次 **0 次 provider 调用**，解释类才可能调 DeepSeek；
+  对话按 profile 持久化在本浏览器。starter 措辞改为 router 能解析的 `How much have I trained back this week?`
+  （**未修改 router**）。
+* Phase 2 验证：`pytest` → **161 / 161 PASS**（149 → 161，新增 12 项 API 测试）·
+  前端 `pnpm typecheck` / `lint` / `build` 全部 PASS · 浏览器端到端 **20/20** ·
+  档案切换 **6/6** · 视觉 QA 8 路由 × 2 视口 **横向溢出 0px**。
+* 仍未 parity（已记录，见 `docs/V1_2_FUNCTIONAL_PARITY.md`）：图表无 hover tooltip、
+  Trends 的 "sessions in the last 14 days" 指标、import 的两步确认、独立 About 路由、
+  本地多档案账号管理（create/delete local profile）与 demo regenerate 工具。
+* 正常产品演示**不再需要 Streamlit**；仍留在 Streamlit 的只有开发者/诊断类工具。
 * 新增：`backend/`（FastAPI：`main.py` · `api/routes.py` · `services/*` · `schemas/models.py`）、
   `frontend/`（Next.js 16 App Router + React 19 + TypeScript + Tailwind 4 + shadcn/ui 风格原语）、`test_api.py`。
 * 复用且未修改：readiness / recommendation / training load / exposure / Decision Trace / safety /
@@ -266,8 +286,8 @@ Decision Trace **不是** LLM chain-of-thought，也不是 debug log；它是产
 
 # Test Baseline
 
-`python -m compileall .` → PASS；`python -m pytest -v` → **149 / 149 passed**
-（139 项 Streamlit/engine 回归 + 10 项 FastAPI 适配层，见 `test_api.py`）。
+`python -m compileall .` → PASS；`python -m pytest -v` → **161 / 161 passed**
+（139 项 Streamlit/engine 回归 + 22 项 FastAPI 适配层，见 `test_api.py`）。
 
 关键 regression 区域：mobile shell 间距契约与 chrome 选择器 · Today 首屏（Readiness / Training / Session Demand / CTA）·
 Train 的 primary 与 alternatives 层级 + 8 步 decision trace · 档案切换与 Demo/Local 隔离 · IndexedDB 写入/刷新/恢复 ·
@@ -412,6 +432,6 @@ Apple Health / Garmin / WHOOP / Oura 属于后期数据入口，核心价值是*
 5. 确认最新 baseline（branch / commit / tests）。
 6. `python -m compileall .`
 7. `python -m pytest -v`
-8. 确认 test baseline（当前应为 149 passed，其中 `test_api.py` 10 项）。
+8. 确认 test baseline（当前应为 161 passed，其中 `test_api.py` 22 项）。
 9. **不要修改任何代码。**
 10. 先汇报理解，然后等待用户的下一条指令。
