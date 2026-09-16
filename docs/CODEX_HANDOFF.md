@@ -221,6 +221,28 @@ Decision Trace **不是** LLM chain-of-thought，也不是 debug log；它是产
   IndexedDB 持久化与导出/导入、多日趋势图、Demo 场景切换、开发者诊断面板。
 * 细节见 `docs/V1_2_FRONTEND_MIGRATION.md`。本阶段**未 push、未合 main、未打 tag**。
 
+# Release Packaging Policy（长期有效，所有后续阶段必须遵守）
+
+每个开发阶段（含 Adaptive Decision Loop 及之后所有阶段）结束时，**必须**产出一个干净的、
+可直接下载的 ZIP 交付包，并在最终报告中列出：ZIP 文件名、ZIP 体积、密钥扫描结果、
+压缩包内容核验结果、以及"是否已交付给用户可下载"。
+
+ZIP 生成方式：`git archive --format=zip -9 -o <输出路径> HEAD`（先提交、工作树 clean，
+这样归档内容**等于**最终工作树）。
+
+ZIP 必须排除：`.git/` · `.venv/` · `node_modules/` · `.next/` · `__pycache__/` ·
+`.pytest_cache/` · `.streamlit/secrets.toml` · `.env` · `.env.*`（`*.example` 示例文件保留）·
+真实 API key / credentials / tokens / 浏览器缓存 / 日志 / 本地数据库 / 临时文件 / 测试截图。
+
+创建 ZIP 前必须扫描**归档的确切文件集**（含 `DEEPSEEK_API_KEY` 赋值、`sk-*`、Bearer token、
+password/credential、私钥块、AWS/GitHub token 等模式），发现真实密钥则**停止**且不得打包。
+扫描不得打印任何密钥值。创建后必须：列出顶层条目、确认禁止目录与密钥文件不存在、
+确认必需源文件与示例配置存在、并解包到临时目录做基本健全性检查
+（至少 `python3 -m compileall .` 与 `python3 -m pytest` 在解包副本中通过）。
+
+当前基线交付物：`Personal_Readiness_Assistant_V1.2_Phase4_Release_Candidate.zip`（353 KB，
+153 条目，密钥扫描 120 个跟踪文件 0 命中，解包副本 161/161 测试通过）。
+
 # Science & References（V1.1 audit，2026-09-16）
 
 * 参考书目 **12 → 13 篇**（新增 Buchheit 2014 · PMID 24578692 · DOI 10.3389/fphys.2014.00073），
