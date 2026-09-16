@@ -1,14 +1,23 @@
 import type {
+  BaseStateResponse,
   CoachMessageResponse,
   CoachTurn,
   DecisionTraceStep,
   HealthResponse,
+  InsightsResponse,
+  ProfileEdits,
+  ProfileOptionsResponse,
   ProfileSummary,
   ReadinessSummary,
   RecentSession,
   ScienceReferencesResponse,
+  ScienceLogicResponse,
+  ScenarioListResponse,
+  SessionLogResponse,
+  StateEnvelope,
   TodayResponse,
   TrainingRecommendation,
+  UserState,
   WeeklyExposure,
 } from "@/types/api";
 
@@ -52,9 +61,29 @@ export const api = {
     request<RecentSession[]>(`/api/training/history${query(profileId)}${profileId ? "&" : "?"}limit=${limit}`),
   decisionTrace: (profileId?: string) => request<DecisionTraceStep[]>(`/api/decision-trace${query(profileId)}`),
   science: () => request<ScienceReferencesResponse>("/api/science/references"),
+  scienceLogic: () => request<ScienceLogicResponse>("/api/science/logic"),
   coachMessage: (question: string, history: CoachTurn[], profileId?: string) =>
     request<CoachMessageResponse>("/api/coach/message", {
       method: "POST",
       body: JSON.stringify({ question, history, profile_id: profileId ?? null }),
     }),
+  // Phase 2 — the browser owns the state and posts it for computation.
+  scenarios: () => request<ScenarioListResponse>("/api/scenarios"),
+  stateBase: (profileId?: string, scenario?: string) =>
+    request<BaseStateResponse>(
+      `/api/state/base${profileId ? `?profile_id=${encodeURIComponent(profileId)}` : ""}${scenario ? `${profileId ? "&" : "?"}scenario=${encodeURIComponent(scenario)}` : ""}`,
+    ),
+  stateToday: (state: UserState) =>
+    request<StateEnvelope>("/api/state/today", { method: "POST", body: JSON.stringify({ state }) }),
+  stateCheckIn: (state: UserState, checkIn: Record<string, unknown>) =>
+    request<StateEnvelope>("/api/state/check-in", { method: "POST", body: JSON.stringify({ state, check_in: checkIn }) }),
+  stateProfile: (state: UserState, edits: ProfileEdits) =>
+    request<StateEnvelope>("/api/state/profile", { method: "POST", body: JSON.stringify({ state, edits }) }),
+  stateSession: (state: UserState, details: Record<string, unknown>) =>
+    request<SessionLogResponse>("/api/state/session", { method: "POST", body: JSON.stringify({ state, ...details }) }),
+  stateCoach: (state: UserState, question: string, history: CoachTurn[]) =>
+    request<CoachMessageResponse>("/api/state/coach", { method: "POST", body: JSON.stringify({ state, question, history }) }),
+  stateInsights: (state: UserState, window?: number) =>
+    request<InsightsResponse>("/api/state/insights", { method: "POST", body: JSON.stringify({ state, window: window ?? null }) }),
+  profileOptions: () => request<ProfileOptionsResponse>("/api/profile/options"),
 };

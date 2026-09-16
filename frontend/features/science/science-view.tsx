@@ -12,7 +12,7 @@ import { api } from "@/lib/api";
  * language is carried over verbatim: it must not be shortened away.
  */
 export async function ScienceView() {
-  const result = await api.science();
+  const [result, logic] = await Promise.all([api.science(), api.scienceLogic()]);
 
   if (!result.ok) {
     return <StatePanel tone="error" title="Science & Logic is unavailable" body={result.error} />;
@@ -45,6 +45,102 @@ export async function ScienceView() {
           </p>
         ))}
       </Card>
+
+      {logic.ok ? (
+        <>
+          <Card className="space-y-3 p-4">
+            <p className="eyebrow text-muted">System overview</p>
+            <p className="text-[0.78rem] leading-relaxed">
+              {logic.data.system_steps.map((step) => step.toLowerCase()).join(" → ")}
+            </p>
+            <div className="grid gap-2 pt-1">
+              {Object.entries(logic.data.inputs).map(([key, value]) => (
+                <p key={key} className="text-[0.74rem] text-muted">
+                  <span className="font-semibold uppercase tracking-wide text-foreground">{key.replace("_", " ")}</span> ·{" "}
+                  {value}
+                </p>
+              ))}
+            </div>
+          </Card>
+
+          <Card className="space-y-3 p-4">
+            <p className="eyebrow text-muted">Threshold table</p>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-[0.72rem]">
+                <thead className="text-muted">
+                  <tr>
+                    <th className="pb-1 font-medium">Input</th>
+                    <th className="pb-1 font-medium">Green</th>
+                    <th className="pb-1 font-medium">Amber</th>
+                    <th className="pb-1 font-medium">Red</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {logic.data.thresholds.map((row) => (
+                    <tr key={row.key} className="border-t border-subtle">
+                      <td className="py-1.5 pr-2">{row.label}</td>
+                      <td className="py-1.5 pr-2 tabular-nums">{row.green}</td>
+                      <td className="py-1.5 pr-2 tabular-nums">{row.amber}</td>
+                      <td className="py-1.5 tabular-nums">{row.red}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="text-[0.7rem] text-muted">{logic.data.threshold_caveat}</p>
+          </Card>
+
+          <Card className="space-y-3 p-4">
+            <p className="eyebrow text-muted">Overall readiness logic</p>
+            <ul className="space-y-1.5">
+              {logic.data.overall_rule.map((rule) => (
+                <li key={rule} className="text-[0.76rem] leading-relaxed text-muted">
+                  • {rule}
+                </li>
+              ))}
+            </ul>
+            <p className="text-[0.74rem] leading-relaxed">{logic.data.readiness_index_caveat}</p>
+            <p className="text-[0.74rem] leading-relaxed text-muted">{logic.data.safety_override}</p>
+          </Card>
+
+          <Card className="space-y-3 p-4">
+            <p className="eyebrow text-muted">How today&apos;s training is selected</p>
+            <ol className="space-y-1.5">
+              {logic.data.decision_order.map((step, index) => (
+                <li key={step} className="text-[0.76rem] leading-relaxed">
+                  <span className="font-semibold">{index + 1}.</span> {step}
+                </li>
+              ))}
+            </ol>
+            <p className="text-[0.74rem] leading-relaxed text-muted">{logic.data.session_demand_mapping}</p>
+            <p className="text-[0.74rem] leading-relaxed text-muted">
+              Training Load is calendar-based: mean daily session-RPE load across{" "}
+              {String(logic.data.training_load.recent_window ?? "the last 7 complete calendar days")} compared with{" "}
+              {String(logic.data.training_load.reference_window ?? "the preceding 21 complete calendar days")}.
+            </p>
+            <p className="text-[0.74rem] leading-relaxed text-muted">
+              Weekly exposure uses weighted working sets:{" "}
+              {String(logic.data.fractional_sets["label"] ?? "direct sets count 1.0 and mapped secondary sets 0.5")}
+            </p>
+            <p className="text-[0.74rem] leading-relaxed text-muted">{logic.data.rir_guidance}</p>
+          </Card>
+
+          <Card className="space-y-2 p-4">
+            <p className="eyebrow text-muted">Example decision</p>
+            <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-[0.74rem]">
+              {Object.entries(logic.data.example_decision).map(([key, value]) => (
+                <div key={key} className="flex justify-between gap-2">
+                  <dt className="text-muted capitalize">{key.replace("_", " ")}</dt>
+                  <dd className="text-right font-medium">{value}</dd>
+                </div>
+              ))}
+            </dl>
+            <p className="text-[0.7rem] text-muted">{logic.data.example_note}</p>
+          </Card>
+        </>
+      ) : (
+        <StatePanel tone="error" title="Rule detail unavailable" body={logic.error} />
+      )}
 
       <section className="space-y-2">
         <h2 className="px-1 text-sm font-semibold">Concept by concept</h2>

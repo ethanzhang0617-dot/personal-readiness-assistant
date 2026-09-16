@@ -1,32 +1,40 @@
+"use client";
+
 import Link from "next/link";
 import { ArrowRight, ShieldCheck } from "lucide-react";
 
+import { CheckInPrompt } from "@/components/check-in-prompt";
 import { DecisionTrace } from "@/components/decision-trace";
 import { ReadinessHero } from "@/components/readiness-hero";
 import { StatePanel } from "@/components/state-panel";
 import { TrainingBlock } from "@/components/training-block";
 import { buttonVariants } from "@/components/ui/button";
-import { api } from "@/lib/api";
+import { useUserState } from "@/lib/state-provider";
 import { cn } from "@/lib/utils";
 
 /**
  * Today: readiness answer, training answer, effort answer, then the CTA.
- * Everything comes from the API; no personal value is hardcoded here.
+ * Everything comes from the engines through the API; the user's own data lives
+ * in this browser.
  */
-export async function TodayView({ profileId }: { profileId?: string }) {
-  const result = await api.today(profileId);
+export function TodayView() {
+  const { ready, today, error } = useUserState();
 
-  if (!result.ok) {
+  if (!ready) {
+    return <StatePanel title="Loading your readiness context…" body="Reading local data and recalculating from the engines." />;
+  }
+
+  if (!today) {
     return (
       <StatePanel
         tone="error"
         title="Today is unavailable right now"
-        body={result.error}
+        body={error ?? "The API did not return a readiness result."}
       />
     );
   }
 
-  const { profile, readiness, training, why } = result.data;
+  const { profile, readiness, training, why } = today;
 
   return (
     <div className="space-y-3 md:space-y-4">
@@ -54,20 +62,16 @@ export async function TodayView({ profileId }: { profileId?: string }) {
 
       <ReadinessHero readiness={readiness} />
       <TrainingBlock recommendation={training.recommendation} />
+      <CheckInPrompt />
+      <Link href="/train" className={cn(buttonVariants({ size: "lg" }), "w-full")} aria-label="Start session">
+        START SESSION
+        <ArrowRight className="h-4 w-4" />
+      </Link>
       <DecisionTrace
         steps={training.decision_trace}
         rationale={why.rationale}
         headline={why.headline}
       />
-
-      <Link
-        href="/train"
-        className={cn(buttonVariants({ size: "lg" }), "w-full")}
-        aria-label="Start session"
-      >
-        START SESSION
-        <ArrowRight className="h-4 w-4" />
-      </Link>
 
       <p className="flex items-center justify-center gap-1.5 text-center text-[0.68rem] text-muted">
         <ShieldCheck className="h-3.5 w-3.5" aria-hidden />

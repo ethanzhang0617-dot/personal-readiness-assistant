@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 
 import { AppShell } from "@/components/app-shell";
+import { Providers } from "@/components/providers";
 
 import "./globals.css";
 
@@ -21,7 +22,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <body>
-        <AppShell>{children}</AppShell>
+        <Providers>
+          <AppShell>{children}</AppShell>
+        </Providers>
       </body>
     </html>
   );
