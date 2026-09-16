@@ -369,6 +369,7 @@ export interface InsightSeries {
 export interface InsightsResponse {
   window: number;
   available_check_ins: number;
+  sessions_last_14_days: number;
   series: InsightSeries[];
   load: Record<string, unknown>;
   exposure: WeeklyExposure;

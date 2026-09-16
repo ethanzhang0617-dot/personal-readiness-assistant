@@ -413,6 +413,7 @@ class InsightSeries(ApiModel):
 class InsightsResponse(ApiModel):
     window: int
     available_check_ins: int
+    sessions_last_14_days: int = 0
     series: list[InsightSeries]
     load: dict[str, Any]
     exposure: WeeklyExposure

@@ -1,7 +1,6 @@
-import { CircleAlert, Info, RefreshCw, WifiOff } from "lucide-react";
+import { CircleAlert, Info, WifiOff } from "lucide-react";
 import type { ReactNode } from "react";
 
-import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 
 interface StatePanelProps {
@@ -31,22 +30,5 @@ export function StatePanel({ tone = "info", title, body, action }: StatePanelPro
         </div>
       </div>
     </Card>
-  );
-}
-
-export function LoadingCard({ label }: { label: string }) {
-  return (
-    <Card className="flex items-center gap-3 p-4">
-      <RefreshCw className="h-4 w-4 animate-spin text-muted" />
-      <span className="text-sm text-muted">{label}</span>
-    </Card>
-  );
-}
-
-export function PrimaryAction({ label }: { label: string }) {
-  return (
-    <Button size="md" variant="secondary" disabled>
-      {label}
-    </Button>
   );
 }

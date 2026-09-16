@@ -7,6 +7,7 @@ missing days stay missing rather than becoming zero.
 
 from __future__ import annotations
 
+from datetime import date, timedelta
 from typing import Any, Mapping
 
 from readiness_engine import ln_rmssd
@@ -88,9 +89,17 @@ def build(profile: Mapping[str, Any], assessment: Mapping[str, Any],
 
     missing = ("Charts only plot recorded check-ins. Days without a check-in are shown as gaps, not as zero, "
                "and a metric without a recorded value is not plotted.")
+
+    # Same metric the reference implementation shows on its Trends page: completed
+    # sessions with a date inside the last 14 days (today minus 13 days onwards).
+    cutoff = (date.today() - timedelta(days=13)).isoformat()
+    sessions_14d = sum(1 for row in (profile.get("training_history") or [])
+                       if row.get("completed") and str(row.get("date")) >= cutoff)
+
     return {
         "window": window,
         "available_check_ins": len(rows),
+        "sessions_last_14_days": sessions_14d,
         "series": series,
         "load": load,
         "exposure": training_service.exposure(profile, assessment, recommendation),

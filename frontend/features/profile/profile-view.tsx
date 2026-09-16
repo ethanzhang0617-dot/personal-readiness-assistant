@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowRight, Info } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { PageHeader } from "@/components/page-header";
@@ -9,51 +9,119 @@ import { ProfileSwitcher } from "@/components/profile-switcher";
 import { ScenarioSwitcher } from "@/components/scenario-switcher";
 import { StatePanel } from "@/components/state-panel";
 import { Badge } from "@/components/ui/badge";
-import { Button, buttonVariants } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Section } from "@/components/ui/section";
 import { api } from "@/lib/api";
 import { formatNumber } from "@/lib/format";
 import { useUserState } from "@/lib/state-provider";
 import type { ProfileEdits, ProfileOptionsResponse } from "@/types/api";
-import { cn } from "@/lib/utils";
+
+function SelectField({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: string[] | undefined;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="block">
+      <span className="text-[0.75rem] text-muted">{label}</span>
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="mt-1.5 min-h-11 w-full rounded-[var(--radius-control)] border border-subtle bg-surface px-3 text-sm"
+      >
+        {(options ?? []).map((option) => (
+          <option key={option} value={option}>
+            {option}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function NumberField({
+  label,
+  value,
+  min,
+  max,
+  step = 1,
+  suffix,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  step?: number;
+  suffix?: string;
+  onChange: (value: number) => void;
+}) {
+  return (
+    <label className="block">
+      <span className="text-[0.75rem] text-muted">{label}</span>
+      <span className="mt-1.5 flex min-h-11 items-center rounded-[var(--radius-control)] border border-subtle bg-surface px-3">
+        <input
+          type="number"
+          min={min}
+          max={max}
+          step={step}
+          value={value}
+          onChange={(event) => onChange(Number(event.target.value))}
+          className="w-full bg-transparent text-sm outline-none"
+        />
+        {suffix ? <span className="ml-1 shrink-0 text-[0.75rem] text-muted">{suffix}</span> : null}
+      </span>
+    </label>
+  );
+}
 
 export function ProfileView() {
   const { ready, today, saveProfile, busy, scenario } = useUserState();
   const [options, setOptions] = useState<ProfileOptionsResponse | null>(null);
-  const [form, setForm] = useState<ProfileEdits>({});
-  const [targets, setTargets] = useState<Record<string, number>>({});
+  const [draft, setDraft] = useState<ProfileEdits>({});
+  const [targetDraft, setTargetDraft] = useState<Record<string, number>>({});
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    let cancelled = false;
     api.profileOptions().then((result) => {
-      if (result.ok) setOptions(result.data);
+      if (!cancelled && result.ok) setOptions(result.data);
     });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  useEffect(() => {
-    if (!today) return;
-    const profile = today.profile;
-    setForm({
-      name: profile.name,
-      age: profile.age,
-      sex: profile.sex,
-      primary_activity: profile.primary_activity,
-      training_goal: profile.training_goal,
-      training_level: profile.training_level,
-      training_split_preference: profile.training_split_preference,
-      personal_sleep_need: profile.personal_sleep_need,
-      target_sessions_per_week: profile.target_sessions_per_week,
-    });
-    setTargets(profile.weekly_set_targets ?? {});
-  }, [today]);
-
   if (!ready || !today) {
-    return <StatePanel title="Loading your profile…" body="Reading local data from this browser." />;
+    return <StatePanel title="Loading your profile…" body="Reading this browser's stored data." />;
   }
 
   const profile = today.profile;
   const baseline = (today.readiness.baseline ?? {}) as Record<string, unknown>;
+  // Derived form: the stored profile is the base and `draft` holds only the edits,
+  // so nothing has to be synchronised by an effect.
+  const form: ProfileEdits = {
+    name: profile.name,
+    age: profile.age,
+    sex: profile.sex,
+    primary_activity: profile.primary_activity,
+    training_goal: profile.training_goal,
+    training_level: profile.training_level,
+    training_split_preference: profile.training_split_preference,
+    personal_sleep_need: profile.personal_sleep_need,
+    target_sessions_per_week: profile.target_sessions_per_week,
+    ...draft,
+  };
+  const targets: Record<string, number> = { ...(profile.weekly_set_targets ?? {}), ...targetDraft };
+  const set = (key: keyof ProfileEdits, value: string | number) =>
+    setDraft((current) => ({ ...current, [key]: value }));
 
   const save = async () => {
     setMessage(null);
@@ -63,25 +131,8 @@ export function ProfileView() {
     else setError(result.error ?? "The profile could not be saved.");
   };
 
-  const select = (key: keyof ProfileEdits, label: string, values: string[] | undefined) => (
-    <label className="block" key={String(key)}>
-      <span className="text-[0.78rem] text-muted">{label}</span>
-      <select
-        value={String(form[key] ?? "")}
-        onChange={(event) => setForm((current) => ({ ...current, [key]: event.target.value }))}
-        className="mt-1 min-h-11 w-full rounded-[var(--radius-control)] border border-subtle bg-surface px-3 text-sm"
-      >
-        {(values ?? []).map((value) => (
-          <option key={value} value={value}>
-            {value}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
-
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <PageHeader
         eyebrow="Profile"
         title={profile.name}
@@ -92,151 +143,162 @@ export function ProfileView() {
       {message ? <StatePanel tone="info" title="Saved" body={message} /> : null}
       {error ? <StatePanel tone="error" title="Not saved" body={error} /> : null}
 
-      <ProfileSwitcher />
-
-      <Card className="space-y-3 p-4">
-        <p className="eyebrow text-muted">Goal and programme</p>
-        <label className="block">
-          <span className="text-[0.78rem] text-muted">Name</span>
-          <input
-            value={String(form.name ?? "")}
-            onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
-            className="mt-1 min-h-11 w-full rounded-[var(--radius-control)] border border-subtle bg-surface px-3 text-sm"
+      <Section eyebrow="Training" title="Goal and programme" divided={false}>
+        <div className="grid gap-3 md:grid-cols-2">
+          <label className="block md:col-span-2">
+            <span className="text-[0.75rem] text-muted">Name</span>
+            <input
+              value={String(form.name ?? "")}
+              onChange={(event) => set("name", event.target.value)}
+              className="mt-1.5 min-h-11 w-full rounded-[var(--radius-control)] border border-subtle bg-surface px-3 text-sm"
+            />
+          </label>
+          <SelectField
+            label="Training goal"
+            value={String(form.training_goal ?? "")}
+            options={options?.goals}
+            onChange={(value) => set("training_goal", value)}
           />
-        </label>
-        {select("training_goal", "Training goal", options?.goals)}
-        {select("training_split_preference", "Preferred training split", options?.splits)}
-        {select("training_level", "Training level", options?.levels)}
-        {select("primary_activity", "Primary activity", options?.activities)}
-      </Card>
-
-      <Card className="space-y-3 p-4">
-        <p className="eyebrow text-muted">Baseline inputs</p>
-        <div className="grid grid-cols-2 gap-3">
-          <label className="block">
-            <span className="text-[0.78rem] text-muted">Age</span>
-            <input
-              type="number"
-              min={16}
-              max={100}
-              value={Number(form.age ?? 25)}
-              onChange={(event) => setForm((current) => ({ ...current, age: Number(event.target.value) }))}
-              className="mt-1 min-h-11 w-full rounded-[var(--radius-control)] border border-subtle bg-surface px-3 text-sm"
-            />
-          </label>
-          <label className="block">
-            <span className="text-[0.78rem] text-muted">Sleep need (hours)</span>
-            <input
-              type="number"
-              step={0.1}
-              min={4}
-              max={12}
-              value={Number(form.personal_sleep_need ?? 8)}
-              onChange={(event) =>
-                setForm((current) => ({ ...current, personal_sleep_need: Number(event.target.value) }))
-              }
-              className="mt-1 min-h-11 w-full rounded-[var(--radius-control)] border border-subtle bg-surface px-3 text-sm"
-            />
-          </label>
-          <label className="block">
-            <span className="text-[0.78rem] text-muted">Target sessions / week</span>
-            <input
-              type="number"
-              min={0}
-              max={14}
-              value={Number(form.target_sessions_per_week ?? 3)}
-              onChange={(event) =>
-                setForm((current) => ({ ...current, target_sessions_per_week: Number(event.target.value) }))
-              }
-              className="mt-1 min-h-11 w-full rounded-[var(--radius-control)] border border-subtle bg-surface px-3 text-sm"
-            />
-          </label>
-          {select("sex", "Sex", options?.sexes)}
+          <SelectField
+            label="Preferred split"
+            value={String(form.training_split_preference ?? "")}
+            options={options?.splits}
+            onChange={(value) => set("training_split_preference", value)}
+          />
+          <SelectField
+            label="Training level"
+            value={String(form.training_level ?? "")}
+            options={options?.levels}
+            onChange={(value) => set("training_level", value)}
+          />
+          <SelectField
+            label="Primary activity"
+            value={String(form.primary_activity ?? "")}
+            options={options?.activities}
+            onChange={(value) => set("primary_activity", value)}
+          />
         </div>
-      </Card>
+      </Section>
 
-      <Card className="space-y-3 p-4">
-        <p className="eyebrow text-muted">Weekly set targets</p>
-        <p className="text-[0.68rem] text-muted">
-          Optional planning targets. Seven-day exposure compares against these; they are not universal optimal-volume
-          claims.
+      <Section eyebrow="Readiness" title="Baseline inputs">
+        <div className="grid gap-3 md:grid-cols-2">
+          <NumberField
+            label="Personal sleep need"
+            value={Number(form.personal_sleep_need ?? 8)}
+            min={4}
+            max={12}
+            step={0.1}
+            suffix="hours"
+            onChange={(value) => set("personal_sleep_need", value)}
+          />
+          <NumberField
+            label="Target sessions per week"
+            value={Number(form.target_sessions_per_week ?? 3)}
+            min={0}
+            max={14}
+            onChange={(value) => set("target_sessions_per_week", value)}
+          />
+          <NumberField
+            label="Age"
+            value={Number(form.age ?? 25)}
+            min={16}
+            max={100}
+            onChange={(value) => set("age", value)}
+          />
+          <SelectField
+            label="Sex"
+            value={String(form.sex ?? "")}
+            options={options?.sexes}
+            onChange={(value) => set("sex", value)}
+          />
+        </div>
+
+        <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-2 border-t border-subtle pt-3 text-[0.75rem] md:grid-cols-4">
+          <div>
+            <dt className="text-muted">Valid observations</dt>
+            <dd className="font-medium tabular-nums">{String(baseline.valid_days ?? "—")}</dd>
+          </div>
+          <div>
+            <dt className="text-muted">Baseline window</dt>
+            <dd className="font-medium tabular-nums">{String(baseline.window_days ?? "—")} days</dd>
+          </div>
+          <div>
+            <dt className="text-muted">Confidence</dt>
+            <dd className="font-medium">{String(baseline.confidence ?? "—")}</dd>
+          </div>
+          <div>
+            <dt className="text-muted">LnRMSSD mean</dt>
+            <dd className="font-medium tabular-nums">
+              {baseline.lnrmssd_mean ? formatNumber(baseline.lnrmssd_mean as number, 2) : "—"}
+            </dd>
+          </div>
+        </dl>
+        <p className="mt-2 text-[0.68rem] leading-relaxed text-muted">
+          Readiness compares today against these personal observations instead of population cut-offs. Baseline
+          confidence describes data sufficiency, not model certainty.
         </p>
-        <div className="grid grid-cols-2 gap-3">
+      </Section>
+
+      <Section
+        eyebrow="Planning"
+        title="Weekly set targets"
+        description="Optional planning targets. Seven-day exposure compares against these; they are not universal optimal-volume claims."
+      >
+        <div className="grid grid-cols-2 gap-x-4 gap-y-3">
           {(options?.muscle_groups ?? []).map((group) => (
-            <label key={group} className="flex items-center justify-between gap-2 text-[0.78rem]">
-              <span>{group}</span>
-              <input
-                type="number"
-                min={0}
-                max={40}
-                step={1}
-                value={targets[group] ?? 0}
-                onChange={(event) => setTargets((current) => ({ ...current, [group]: Number(event.target.value) || 0 }))}
-                className="min-h-9 w-20 rounded-[var(--radius-control)] border border-subtle bg-surface px-2 text-right text-[0.78rem]"
-              />
+            <label key={group} className="flex items-center justify-between gap-2">
+              <span className="text-[0.8rem]">{group}</span>
+              <span className="flex min-h-10 w-20 items-center rounded-[var(--radius-control)] border border-subtle bg-surface px-2">
+                <input
+                  type="number"
+                  min={0}
+                  max={40}
+                  aria-label={`${group} weekly target`}
+                  value={targets[group] ?? 0}
+                  onChange={(event) =>
+                    setTargetDraft((current) => ({ ...current, [group]: Number(event.target.value) || 0 }))
+                  }
+                  className="w-full bg-transparent text-right text-[0.8rem] outline-none"
+                />
+              </span>
             </label>
           ))}
         </div>
-      </Card>
+      </Section>
 
       <Button size="lg" variant="primary" className="w-full" disabled={busy} onClick={() => void save()}>
         {busy ? "Saving…" : "Save profile"}
       </Button>
 
-      <Card className="p-4">
-        <p className="eyebrow text-muted">Personal baseline</p>
-        <dl className="mt-2 divide-y divide-subtle text-sm">
-          <div className="flex justify-between py-2">
-            <dt className="text-muted">Valid paired observations</dt>
-            <dd>{String(baseline.valid_days ?? "—")}</dd>
+      {profile.is_demo ? (
+        <Section eyebrow="Demo controls" title="Scenarios and profiles" description="Portfolio demo controls — not part of the daily workflow.">
+          <div className="space-y-3">
+            <ScenarioSwitcher />
+            <ProfileSwitcher />
           </div>
-          <div className="flex justify-between py-2">
-            <dt className="text-muted">Baseline window</dt>
-            <dd>{String(baseline.window_days ?? "—")} days</dd>
-          </div>
-          <div className="flex justify-between py-2">
-            <dt className="text-muted">Baseline confidence</dt>
-            <dd>{String(baseline.confidence ?? "—")}</dd>
-          </div>
-          <div className="flex justify-between py-2">
-            <dt className="text-muted">LnRMSSD mean</dt>
-            <dd className="tabular-nums">{(baseline.lnrmssd_mean as number) ? formatNumber(baseline.lnrmssd_mean as number, 2) : "—"}</dd>
-          </div>
-        </dl>
-        <p className="mt-2 text-[0.68rem] leading-relaxed text-muted">
-          Readiness compares today against these personal observations rather than population cut-offs. Baseline
-          confidence describes data sufficiency, not model certainty.
-        </p>
-      </Card>
+          {scenario ? <p className="mt-2 text-[0.68rem] text-muted">Active scenario: {scenario}</p> : null}
+        </Section>
+      ) : null}
 
-      {profile.is_demo ? <ScenarioSwitcher /> : null}
-      {scenario ? <p className="text-[0.68rem] text-muted">Active demo scenario: {scenario}</p> : null}
-
-      <Link
-        href="/profile/science"
-        className="flex min-h-14 items-center justify-between gap-3 rounded-[var(--radius-card)] border border-subtle bg-surface px-4 text-sm font-medium transition-colors hover:bg-surface-muted"
-      >
-        <span>
-          Science &amp; Logic
-          <span className="block text-[0.7rem] font-normal text-muted">
-            Evidence boundaries, heuristics and 13 verified references
-          </span>
-        </span>
-        <ArrowRight className="h-4 w-4 text-muted" aria-hidden />
-      </Link>
-
-      <Link
-        href="/profile/data"
-        className={cn(buttonVariants({ variant: "secondary" }), "w-full")}
-      >
-        Data, privacy, import / export and about
-      </Link>
-
-      <p className="flex items-start gap-2 text-[0.68rem] leading-relaxed text-muted">
-        <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
-        An educational decision-support prototype. Not a medical device, diagnosis, injury prediction or clinically
-        validated training prescription.
-      </p>
+      <Section eyebrow="Information" title="Science, data and about">
+        <ul className="divide-y divide-subtle border-y border-subtle">
+          {[
+            { href: "/profile/science", label: "Science & Logic", hint: "Evidence boundaries, heuristics and 13 verified references" },
+            { href: "/profile/data", label: "Data, privacy and backup", hint: "What is stored, where it goes, export and import" },
+            { href: "/profile/about", label: "About this prototype", hint: "What the product is and what it does not claim" },
+          ].map((item) => (
+            <li key={item.href}>
+              <Link href={item.href} className="flex min-h-14 items-center justify-between gap-3 py-2">
+                <span className="min-w-0">
+                  <span className="block text-[0.86rem] font-medium">{item.label}</span>
+                  <span className="block text-[0.7rem] text-muted">{item.hint}</span>
+                </span>
+                <ArrowRight className="h-4 w-4 shrink-0 text-muted" aria-hidden />
+              </Link>
+            </li>
+          ))}
+        </ul>
+      </Section>
     </div>
   );
 }

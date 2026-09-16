@@ -1,37 +1,53 @@
+"use client";
+
+import { useRef, useState } from "react";
+
+import { formatShortDate } from "@/lib/format";
 import type { InsightPoint } from "@/types/api";
 
-// Minimal responsive trend chart. Missing values break the line instead of
-// dropping to zero, and a baseline reference is drawn only when it exists.
+// Dependency-free responsive trend chart. Missing values break the line instead
+// of dropping to zero, a dashed line shows the 7-check-in mean, a dotted line
+// shows the personal baseline, and hovering or tapping reveals the exact value.
+
+const WIDTH = 320;
+const HEIGHT = 120;
+const PAD_LEFT = 30;
+const PAD_RIGHT = 6;
+const PAD_TOP = 8;
+const PAD_BOTTOM = 6;
 
 interface TrendChartProps {
   points: InsightPoint[];
   baseline?: number | null;
-  height?: number;
+  unit?: string;
   label: string;
 }
 
-export function TrendChart({ points, baseline = null, height = 96, label }: TrendChartProps) {
+export function TrendChart({ points, baseline = null, unit = "", label }: TrendChartProps) {
+  const [active, setActive] = useState<number | null>(null);
+  const frame = useRef<HTMLDivElement | null>(null);
+
   const values = points.map((point) => point.value).filter((value): value is number => value !== null);
   const means = points.map((point) => point.rolling_mean).filter((value): value is number => value !== null);
 
   if (values.length < 2) {
     return (
-      <p className="flex h-24 items-center justify-center rounded-[var(--radius-control)] bg-muted-soft text-[0.72rem] text-muted">
-        Not enough recorded data yet.
-      </p>
+      <div className="flex h-28 items-center justify-center rounded-[var(--radius-control)] border border-dashed border-subtle text-[0.75rem] text-muted">
+        Not enough recorded data yet — check in for a few more days.
+      </div>
     );
   }
 
   const pool = [...values, ...means, ...(baseline !== null ? [baseline] : [])];
-  const min = Math.min(...pool);
-  const max = Math.max(...pool);
-  const span = max - min || 1;
-  const padding = span * 0.12;
-  const low = min - padding;
-  const high = max + padding;
-  const width = 320;
-  const x = (index: number) => (points.length === 1 ? 0 : (index / (points.length - 1)) * width);
-  const y = (value: number) => height - ((value - low) / (high - low)) * height;
+  const low = Math.min(...pool);
+  const high = Math.max(...pool);
+  const span = high - low || 1;
+  const min = low - span * 0.12;
+  const max = high + span * 0.12;
+  const innerWidth = WIDTH - PAD_LEFT - PAD_RIGHT;
+  const innerHeight = HEIGHT - PAD_TOP - PAD_BOTTOM;
+  const x = (index: number) => PAD_LEFT + (points.length === 1 ? 0 : (index / (points.length - 1)) * innerWidth);
+  const y = (value: number) => PAD_TOP + innerHeight - ((value - min) / (max - min)) * innerHeight;
 
   const segments: string[] = [];
   let current: string[] = [];
@@ -46,46 +62,112 @@ export function TrendChart({ points, baseline = null, height = 96, label }: Tren
   if (current.length > 1) segments.push(current.join(" "));
 
   const meanPath = points
-    .map((point, index) => (point.rolling_mean === null ? null : `${x(index).toFixed(1)},${y(point.rolling_mean).toFixed(1)}`))
+    .map((point, index) =>
+      point.rolling_mean === null ? null : `${x(index).toFixed(1)},${y(point.rolling_mean).toFixed(1)}`,
+    )
     .filter((value): value is string => value !== null)
     .join(" L");
 
-  const baselineY = baseline !== null ? y(baseline) : null;
+  const ticks = [max, (max + min) / 2, min];
+  const shown = active !== null ? points[active] : points[points.length - 1];
+  const shownValue = shown?.value ?? null;
+
+  const move = (clientX: number) => {
+    const box = frame.current?.getBoundingClientRect();
+    if (!box) return;
+    const ratio = Math.min(Math.max((clientX - box.left) / box.width, 0), 1);
+    const svgX = ratio * WIDTH;
+    const index = Math.round(((svgX - PAD_LEFT) / innerWidth) * (points.length - 1));
+    setActive(Math.min(Math.max(index, 0), points.length - 1));
+  };
 
   return (
     <figure className="w-full">
-      <svg
-        viewBox={`0 0 ${width} ${height}`}
-        preserveAspectRatio="none"
-        role="img"
-        aria-label={label}
-        className="h-24 w-full"
+      <div
+        ref={frame}
+        className="relative"
+        onMouseMove={(event) => move(event.clientX)}
+        onMouseLeave={() => setActive(null)}
+        onTouchStart={(event) => move(event.touches[0].clientX)}
+        onTouchMove={(event) => move(event.touches[0].clientX)}
+        onTouchEnd={() => setActive(null)}
       >
-        {baselineY !== null ? (
-          <line
-            x1={0}
-            x2={width}
-            y1={baselineY}
-            y2={baselineY}
-            stroke="var(--color-muted)"
-            strokeWidth={1}
-            strokeDasharray="2 3"
-            opacity={0.5}
-          />
-        ) : null}
-        {meanPath ? (
-          <path d={`M${meanPath}`} fill="none" stroke="var(--color-muted)" strokeWidth={1.5} strokeDasharray="5 4" />
-        ) : null}
-        {segments.map((path) => (
-          <path key={path} d={path} fill="none" stroke="var(--color-primary)" strokeWidth={2} strokeLinecap="round" />
-        ))}
-      </svg>
-      <figcaption className="mt-1 flex justify-between text-[0.62rem] text-muted">
-        <span>{points[0]?.date}</span>
-        <span>
-          {low.toFixed(1)} – {high.toFixed(1)}
-        </span>
-        <span>{points[points.length - 1]?.date}</span>
+        <svg
+          viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
+          preserveAspectRatio="none"
+          role="img"
+          aria-label={`${label}: latest ${shownValue ?? "no"} ${unit}. Trend over ${points.length} check-ins.`}
+          className="h-28 w-full"
+        >
+          {ticks.map((tick, index) => (
+            <g key={tick + index}>
+              <line
+                x1={PAD_LEFT}
+                x2={WIDTH - PAD_RIGHT}
+                y1={y(tick)}
+                y2={y(tick)}
+                stroke="var(--color-subtle)"
+                strokeWidth={1}
+              />
+              <text x={0} y={y(tick) + 3} fontSize={9} fill="var(--color-muted)">
+                {tick.toFixed(tick >= 100 ? 0 : 1)}
+              </text>
+            </g>
+          ))}
+
+          {baseline !== null ? (
+            <line
+              x1={PAD_LEFT}
+              x2={WIDTH - PAD_RIGHT}
+              y1={y(baseline)}
+              y2={y(baseline)}
+              stroke="var(--color-muted)"
+              strokeWidth={1}
+              strokeDasharray="2 3"
+              opacity={0.55}
+            />
+          ) : null}
+
+          {meanPath ? (
+            <path d={`M${meanPath}`} fill="none" stroke="var(--color-muted)" strokeWidth={1.5} strokeDasharray="5 4" />
+          ) : null}
+
+          {segments.map((path) => (
+            <path key={path} d={path} fill="none" stroke="var(--color-primary)" strokeWidth={2} strokeLinecap="round" />
+          ))}
+
+          {active !== null && shown?.value !== null && shown?.value !== undefined ? (
+            <>
+              <line
+                x1={x(active)}
+                x2={x(active)}
+                y1={PAD_TOP}
+                y2={HEIGHT - PAD_BOTTOM}
+                stroke="var(--color-muted)"
+                strokeWidth={1}
+                opacity={0.5}
+              />
+              <circle cx={x(active)} cy={y(shown.value)} r={3.5} fill="var(--color-primary)" />
+            </>
+          ) : null}
+        </svg>
+
+        <div className="mt-1 flex items-center justify-between text-[0.66rem] text-muted">
+          <span>{formatShortDate(points[0]?.date)}</span>
+          <span aria-live="polite">
+            {shown ? (
+              <span className="font-medium text-foreground">
+                {formatShortDate(shown.date)}
+                {" · "}
+                {shown.value === null ? "no record" : `${shown.value}${unit ? ` ${unit}` : ""}`}
+              </span>
+            ) : null}
+          </span>
+          <span>{formatShortDate(points[points.length - 1]?.date)}</span>
+        </div>
+      </div>
+      <figcaption className="mt-1 text-[0.64rem] text-muted">
+        Solid: recorded value · dashed: 7-check-in mean{baseline !== null ? " · dotted: your baseline" : ""}
       </figcaption>
     </figure>
   );

@@ -27,8 +27,8 @@ export function SideNav() {
               href={item.href}
               aria-current={active ? "page" : undefined}
               className={cn(
-                "flex h-11 items-center gap-3 rounded-[var(--radius-control)] px-3 text-sm font-medium transition-colors",
-                active ? "bg-muted-soft text-foreground" : "text-muted hover:bg-muted-soft hover:text-foreground",
+                "flex h-11 items-center gap-3 rounded-[var(--radius-control)] px-3 text-sm transition-colors",
+                active ? "bg-subtle font-semibold text-foreground" : "font-medium text-muted hover:bg-surface-muted hover:text-foreground",
               )}
             >
               <Icon className="h-4 w-4" />
@@ -37,8 +37,9 @@ export function SideNav() {
           );
         })}
       </nav>
-      <div className="mt-auto p-4 text-[0.7rem] leading-relaxed text-muted">
-        V1.2 migration preview. The Streamlit V1.1 app remains the reference implementation.
+      <div className="mt-auto space-y-1 p-4 text-[0.7rem] leading-relaxed text-muted">
+        <p>V1.2 migration preview.</p>
+        <p>The Streamlit V1.1 app remains the reference implementation.</p>
       </div>
     </aside>
   );

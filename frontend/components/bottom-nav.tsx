@@ -15,7 +15,7 @@ export function BottomNav() {
   return (
     <nav
       aria-label="Primary"
-      className="fixed inset-x-0 bottom-0 z-40 border-t border-subtle bg-surface/95 backdrop-blur md:hidden"
+      className="fixed inset-x-0 bottom-0 z-40 border-t border-subtle bg-surface/95 shadow-[0_-6px_20px_-16px_rgba(20,22,26,0.35)] backdrop-blur md:hidden"
       style={{ paddingBottom: "max(env(safe-area-inset-bottom), 8px)" }}
     >
       <ul className="flex h-16 items-stretch justify-between px-1">
@@ -28,14 +28,14 @@ export function BottomNav() {
                 href={item.href}
                 aria-current={active ? "page" : undefined}
                 className={cn(
-                  "flex h-full min-h-11 flex-col items-center justify-center gap-1 rounded-[var(--radius-control)] text-[0.72rem] font-medium transition-colors",
-                  active ? "text-foreground" : "text-muted",
+                  "flex h-full min-h-11 flex-col items-center justify-center gap-1 rounded-[var(--radius-control)] text-[0.72rem] transition-colors",
+                  active ? "font-semibold text-foreground" : "font-medium text-muted",
                 )}
               >
                 <span
                   className={cn(
                     "flex h-7 w-12 items-center justify-center rounded-full transition-colors",
-                    active ? "bg-muted-soft" : "bg-transparent",
+                    active ? "bg-subtle" : "bg-transparent",
                   )}
                 >
                   <Icon className={cn("h-[1.15rem] w-[1.15rem]", active && "stroke-[2.4]")} />
