@@ -1,0 +1,8 @@
+# pnpm 11 settings for this package.
+# unrs-resolver ships the native resolver used by eslint-config-next; allowing
+# its build script keeps `pnpm lint` working from a clean install.
+allowBuilds:
+  unrs-resolver: true
+
+minimumReleaseAgeExclude:
+  - '@types/node@22.20.3'
