@@ -7,21 +7,31 @@ import { CheckInPrompt } from "@/components/check-in-prompt";
 import { DecisionTrace } from "@/components/decision-trace";
 import { ReadinessHero } from "@/components/readiness-hero";
 import { StatePanel } from "@/components/state-panel";
-import { TrainingBlock } from "@/components/training-block";
+import { TrainingDecision } from "@/components/training-decision";
 import { buttonVariants } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useUserState } from "@/lib/state-provider";
 import { cn } from "@/lib/utils";
 
-/**
- * Today: readiness answer, training answer, effort answer, then the CTA.
- * Everything comes from the engines through the API; the user's own data lives
- * in this browser.
- */
+// Today: the flagship screen. It answers four questions in a deliberate order —
+// how am I today, what should I train, how hard, and why — and nothing else
+// competes for attention.
+//
+// Mobile order: readiness, decision, action, check-in, explanation.
+// Desktop: two columns (readiness + check-in | decision + action), then the
+// full-width explanation, so the extra space is used rather than stretched.
+
 export function TodayView() {
   const { ready, today, error } = useUserState();
 
   if (!ready) {
-    return <StatePanel title="Loading your readiness context…" body="Reading local data and recalculating from the engines." />;
+    return (
+      <div className="space-y-4">
+        <Skeleton className="h-6 w-24" />
+        <Skeleton className="h-[15rem] w-full rounded-[var(--radius-card)]" />
+        <Skeleton className="h-24 w-full" />
+      </div>
+    );
   }
 
   if (!today) {
@@ -29,7 +39,7 @@ export function TodayView() {
       <StatePanel
         tone="error"
         title="Today is unavailable right now"
-        body={error ?? "The API did not return a readiness result."}
+        body={`${error ?? "The API did not return a readiness result."} Start the API and reload this page.`}
       />
     );
   }
@@ -37,20 +47,18 @@ export function TodayView() {
   const { profile, readiness, training, why } = today;
 
   return (
-    <div className="space-y-3 md:space-y-4">
-      <div className="flex items-end justify-between gap-3">
+    <div className="space-y-5">
+      <header className="flex items-end justify-between gap-3">
         <div>
-          <p className="eyebrow text-muted">Today</p>
-          <h1 className="text-[1.6rem] font-semibold tracking-tight md:text-[1.9rem]">
-            {profile.name}
-          </h1>
+          <p className="eyebrow">Today</p>
+          <h1 className="title-page mt-1">{profile.name}</h1>
         </div>
-        <p className="text-right text-[0.7rem] text-muted">
+        <p className="text-right text-[0.75rem] leading-snug text-muted">
           {profile.training_goal}
           <br />
           {profile.training_split_preference}
         </p>
-      </div>
+      </header>
 
       {readiness.safety_active ? (
         <StatePanel
@@ -60,20 +68,40 @@ export function TodayView() {
         />
       ) : null}
 
-      <ReadinessHero readiness={readiness} />
-      <TrainingBlock recommendation={training.recommendation} />
-      <CheckInPrompt />
-      <Link href="/train" className={cn(buttonVariants({ size: "lg" }), "w-full")} aria-label="Start session">
-        START SESSION
-        <ArrowRight className="h-4 w-4" />
-      </Link>
-      <DecisionTrace
-        steps={training.decision_trace}
-        rationale={why.rationale}
-        headline={why.headline}
-      />
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-2 lg:items-start lg:gap-x-10">
+        <ReadinessHero readiness={readiness} className="lg:col-start-1 lg:row-start-1" />
 
-      <p className="flex items-center justify-center gap-1.5 text-center text-[0.68rem] text-muted">
+        <TrainingDecision
+          recommendation={training.recommendation}
+          className="lg:col-start-2 lg:row-start-1"
+        />
+
+        <div className="lg:col-start-2 lg:row-start-2 lg:pt-6">
+          <Link
+            href="/train"
+            className={cn(buttonVariants({ size: "lg" }), "w-full")}
+            aria-label="Start session"
+          >
+            START SESSION
+            <ArrowRight className="h-4 w-4" />
+          </Link>
+          <p className="mt-2 text-center text-[0.7rem] text-muted">
+            Opens the session, the prescription and the completed-session log.
+          </p>
+        </div>
+
+        <CheckInPrompt className="lg:col-start-1 lg:row-start-2 lg:pt-6" />
+
+        <div className="lg:col-span-2 lg:row-start-3">
+          <DecisionTrace
+            steps={training.decision_trace}
+            rationale={why.rationale}
+            headline={why.headline}
+          />
+        </div>
+      </div>
+
+      <p className="flex items-center justify-center gap-1.5 text-center text-[0.7rem] text-muted">
         <ShieldCheck className="h-3.5 w-3.5" aria-hidden />
         Decision support only. Not a medical device, diagnosis or injury prediction.
       </p>

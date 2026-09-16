@@ -1,32 +1,35 @@
 "use client";
 
 import Link from "next/link";
-import { CalendarDays } from "lucide-react";
+import { ArrowUpRight, CalendarDays } from "lucide-react";
 
 import { todayIso, useUserState } from "@/lib/state-provider";
-import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-/** Today's check-in state, surfaced on the home screen. */
-export function CheckInPrompt() {
+/** Today's check-in state as a quiet inline row, not another card. */
+export function CheckInPrompt({ className }: { className?: string }) {
   const { state } = useUserState();
   const checkedIn = Boolean(state?.check_in && state.check_in.date === todayIso());
 
   return (
-    <section className="flex items-center justify-between gap-3 rounded-[var(--radius-card)] border border-subtle bg-surface px-3 py-2.5">
-      <div className="flex min-w-0 items-center gap-2.5">
+    <Link
+      href="/check-in"
+      className={cn(
+        "divider flex min-h-12 items-center justify-between gap-3 pt-4 text-sm transition-colors hover:text-foreground",
+        className,
+      )}
+    >
+      <span className="flex min-w-0 items-center gap-2.5">
         <CalendarDays className="h-4 w-4 shrink-0 text-muted" aria-hidden />
-        <p className="truncate text-[0.78rem]">
-          <span className="eyebrow mr-1.5 text-muted">Check-in</span>
-          {checkedIn ? "recorded today" : "not recorded · demo scenario"}
-        </p>
-      </div>
-      <Link
-        href="/check-in"
-        className={cn(buttonVariants({ variant: checkedIn ? "ghost" : "secondary", size: "sm" }), "shrink-0")}
-      >
+        <span className="truncate">
+          <span className="font-medium">Morning check-in</span>
+          <span className="ml-2 text-muted">{checkedIn ? "recorded today" : "not recorded · demo scenario"}</span>
+        </span>
+      </span>
+      <span className="flex shrink-0 items-center gap-1 text-[0.78rem] font-semibold">
         {checkedIn ? "Update" : "Check in"}
-      </Link>
-    </section>
+        <ArrowUpRight className="h-3.5 w-3.5" aria-hidden />
+      </span>
+    </Link>
   );
 }
