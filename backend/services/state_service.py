@@ -26,6 +26,8 @@ from readiness_engine import SAFETY_FLAGS
 from scenario_data import SCENARIOS, SCENARIO_FIELDS, default_scenario, scenario_values
 from training_recommendation_engine import MUSCLE_GROUPS
 
+from adaptive_response import demo_seed as demo_response_seed
+
 from backend.schemas.models import DailyRow, UserState
 from backend.services import demo_service
 
@@ -77,15 +79,39 @@ def materialise(state: UserState | Mapping[str, Any]) -> dict[str, Any]:
         if row.get("date"):
             upsert_daily_metric(profile, row)
 
-    known = {str(session.get("session_id")) for session in profile.get("training_history") or []}
+    # Overlay sessions are merged onto the seeded row with the same id (so a client
+    # can attach a pre-session snapshot or post-session feedback to a seeded
+    # session), and appended when the id is new.
+    by_id = {str(session.get("session_id")): session for session in profile.get("training_history") or []}
     for session in payload.get("training_history") or []:
         session_id = str(session.get("session_id") or "")
-        if not session_id or session_id in known:
+        if not session_id:
             continue
-        profile.setdefault("training_history", []).append(dict(session))
-        known.add(session_id)
+        existing = by_id.get(session_id)
+        if existing is None:
+            profile.setdefault("training_history", []).append(dict(session))
+            by_id[session_id] = profile["training_history"][-1]
+        else:
+            existing.update(_patch_fields(session))
     profile["training_history"] = sorted(profile.get("training_history") or [], key=lambda row: str(row.get("date")))
     return profile
+
+
+def _patch_fields(row: Mapping[str, Any]) -> dict[str, Any]:
+    """Fields a client patch actually carries.
+
+    A serialised overlay row fills every unused field with ``None`` (or an empty
+    container), so merging it wholesale would erase the seeded session. Only
+    values the client really provided are applied.
+    """
+    patch: dict[str, Any] = {}
+    for key, value in row.items():
+        if value is None:
+            continue
+        if isinstance(value, (list, dict, tuple, set)) and len(value) == 0:
+            continue
+        patch[key] = value
+    return patch
 
 
 def check_in_draft(state: UserState | Mapping[str, Any], profile: Mapping[str, Any]) -> dict[str, Any]:
@@ -146,4 +172,33 @@ def set_scenario(state: UserState, scenario: str | None) -> UserState:
     payload = state.model_dump()
     if scenario in SCENARIOS:
         payload["scenario"] = scenario
+    return UserState(**payload)
+
+
+def upsert_session_overlay(state: UserState, session_id: str, fields: Mapping[str, Any]) -> UserState:
+    """Attach fields (snapshot or feedback) to one session in the client overlay."""
+    payload = state.model_dump()
+    rows = [dict(row) for row in (payload.get("training_history") or [])]
+    target = next((row for row in rows if str(row.get("session_id")) == str(session_id)), None)
+    if target is None:
+        target = {"session_id": str(session_id)}
+        rows.append(target)
+    target.update({key: value for key, value in fields.items() if value is not None})
+    payload["training_history"] = rows
+    return UserState(**payload)
+
+
+def seed_demo_responses(state: UserState, case: str) -> UserState:
+    """Demo-only: attach seeded response data to the client overlay."""
+    profile = materialise(state)
+    seed = demo_response_seed(profile, case)
+    if not seed:
+        return state
+    payload = state.model_dump()
+    rows = {str(row.get("session_id")): dict(row) for row in (payload.get("training_history") or [])}
+    for session_id, fields in seed.items():
+        row = rows.get(session_id, {"session_id": session_id})
+        row.update(fields)
+        rows[session_id] = row
+    payload["training_history"] = list(rows.values())
     return UserState(**payload)
