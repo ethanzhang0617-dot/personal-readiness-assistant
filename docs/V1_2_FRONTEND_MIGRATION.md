@@ -1,12 +1,16 @@
 # V1.2 — Frontend Architecture Migration (Phase 1)
 
 **Branch:** `v1.2-nextjs-migration` (created from `v1.1-productization` at `0c42048`)
-**Status:** Phase 1 pushed (`84fee69`). Phase 2 functional parity complete locally, **not pushed**.
+**Status:** Phase 1 pushed (`84fee69`). Phase 2 pushed (`a00c4e2`). Phase 3 UI polish complete
+locally, **not pushed**.
 
 > Phase 2 adds the write path: morning check-in, completed-session logging, profile and weekly-target
 > editing, demo scenario and profile switching, browser-local persistence with export/import,
 > trend charts, and per-profile Coach history. See `docs/V1_2_FUNCTIONAL_PARITY.md` for the
 > Streamlit-versus-Next.js checklist.
+>
+> Phase 3 polishes the presentation into a portfolio-quality product UI without adding features.
+> See `docs/V1_2_UI_POLISH.md` for the visual direction, the component changes and the QA.
 
 ## 1. Goal
 
@@ -256,3 +260,32 @@ introduced.
 4. Local multi-profile account management (create/delete a local profile) and the demo
    "regenerate history" tool remain Streamlit-only.
 5. Storage schema version 2 replaced version 1; an older local envelope is discarded and reseeded.
+
+---
+
+# Phase 3 — Product UI Polish (implemented)
+
+Presentation-only pass. No product feature, engine, contract or AI change.
+
+* **Design system:** graphite/off-white neutrals, one elevated surface where it carries meaning,
+  status colour reserved for readiness, a four-step type scale, a documented spacing rhythm,
+  Lucide-only icons, one focus treatment, reduced-motion support.
+* **Section primitive replaces the card wall:** most blocks now use an eyebrow, a title, a
+  hairline divider and typographic hierarchy instead of another bordered rectangle. `Card` is
+  reserved for the readiness hero, the primary decision, charts and the log form.
+* **Today** is rebuilt as a flagship screen: readiness hero (large tabular index, status,
+  interpretation, quiet domain strip), the training decision with a three-column stat row, the
+  primary CTA, an inline check-in row and a collapsible causal Decision Trace. At 1440×900 the
+  whole screen fits without scrolling.
+* **Coach** reads as an embedded assistant: avatar + provenance line + full-width answers,
+  right-aligned user bubbles, a raised composer, and an empty state that explains the contract.
+* **Insights** leads with training load, adds "Sessions, last 14 days", and moves the four charts
+  into a responsive 2-column Signals section. Charts gained axis ticks, a current-value readout,
+  hover/tap guides and accessible labels while staying dependency-free.
+* **Train, Check-in, Profile, Data and Science** were reorganised into sections; Check-in uses
+  one-tap segmented scales; import became select → validate → summary → explicit confirm;
+  About is its own route.
+
+Verification for this phase: 45/45 route-viewport combinations (five viewports × nine routes) with
+zero horizontal overflow and no controls under the bottom navigation; the Phase 2 functional
+journey still passes 20/20; Python 161/161; frontend typecheck, lint and build clean.

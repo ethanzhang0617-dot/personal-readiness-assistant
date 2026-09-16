@@ -155,7 +155,16 @@ Decision Trace **不是** LLM chain-of-thought，也不是 debug log；它是产
 * `How much have I trained back this week?` 及所有 personal factual / correction 轮次对 provider 的调用数必须为 **0**。
 * 模型草稿若新增未记录数字、改单位、改周期、替换 primary recommendation 或编造 rationale，必须被 guard 拦截。
 
-# Frontend Migration Status（V1.2 Phase 2 已完成功能 parity，本地未 push）
+# Frontend Migration Status（V1.2 Phase 3 UI polish 已完成，本地未 push）
+
+* Phase 3 = **纯展示层打磨**：设计系统（graphite/off-white 中性色、四级字阶、统一间距节奏、
+  Lucide 图标、统一 focus、reduced-motion）、用 `Section` 取代"卡片墙"、Today 重构为旗舰页
+  （1440×900 单屏不滚动）、Coach 改为嵌入式助理版式、Insights 以 training load 领衔并新增
+  "Sessions, last 14 days"、图表增加坐标刻度/当前值/hover 提示/无障碍标签、Check-in 改为
+  分段控件、Profile 分组化、新增 `/profile/about`、import 改为"选择→校验→摘要→确认替换"。
+* Phase 3 验证：**45/45**（5 视口 × 9 路由）无横向溢出且无控件被底栏遮挡；功能回归 **20/20**；
+  Python **161/161**；前端 typecheck / lint / build 全绿；dev 日志无 React 警告。
+* 细节见 `docs/V1_2_UI_POLISH.md`。
 
 * 分支：`v1.2-nextjs-migration`（自 `v1.1-productization` 的 `0c42048` 创建）。Phase 1 已推送（`84fee69`）。
   **Streamlit V1.1 未被删除、仍可运行**，仍是 reference implementation。
