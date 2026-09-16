@@ -155,7 +155,24 @@ Decision Trace **不是** LLM chain-of-thought，也不是 debug log；它是产
 * `How much have I trained back this week?` 及所有 personal factual / correction 轮次对 provider 的调用数必须为 **0**。
 * 模型草稿若新增未记录数字、改单位、改周期、替换 primary recommendation 或编造 rationale，必须被 guard 拦截。
 
-# Frontend Migration Status（V1.2 Phase 4 Release Candidate，本地未 push）
+# Frontend Migration Status（V1.3 Phase 1 Adaptive Decision Loop，本地未 push）
+
+* 分支：`v1.3-adaptive-decision-loop`（自 V1.2 RC `7d21568` 创建）。V1.2 RC 已冻结在 GitHub
+  （`v1.2-nextjs-migration` = `7d21568`），main / v1.1 / v1.0.0 tag 均未触碰。
+* Phase V1.3-1 = **Personal Response 基础层**（确定性、有界、可解释，无机器学习）：响应情节
+  （session 记录时的会话前快照 + 实际完成 + 反馈 + 次日签到）、证据状态（Insufficient/Emerging/
+  Established）、**最多一个档位**的 HOW HARD 调整、9 步 Decision Trace（READINESS 与 SESSION DEMAND
+  之间新增 PERSONAL RESPONSE）、Train 的轻量训练后反馈、Insights 的 Personal Response 区块、
+  Coach 的确定性 Personal Response 事实回答（**0 次 provider 调用**）、存储 v2→v3 迁移。
+* 安全优先：RED / STOP / 数据不足 / Low 档永不调整；向上调整要求目标档位 Established（≥6 次）且
+  今日 readiness 为 GREEN —— 因引擎的 demand 恰好等于 readiness 允许的档位，该分支当前**不可达**，
+  已在文档与测试中如实标注。
+* 演示（Profile → Demo controls，不进入日常流程）：Not enough history yet / Emerging / Poor tolerance
+  to high demand（**High → Moderate 调整**）/ Established good tolerance。
+* 测试：**188 / 188 PASS**（161 基线 + 18 自适应层 + 9 API）。前端 typecheck / lint / build 全绿；
+  `pnpm check:store` 11/11 迁移断言通过；V1.3 端到端 **19/19**（Chromium 与 WebKit 各一轮）；
+  跨引擎响应式 **54/54**。
+* 细节见 `docs/V1_3_ADAPTIVE_DECISION_LOOP.md`。
 
 * Phase 4 = **发布就绪**（无新功能）：运行时配置（`frontend/.env.example` 单一样本；后端环境变量见
   `docs/V1_2_DEPLOYMENT.md`）、CORS 生产配置说明、跨引擎 QA、API/AI 不可用行为、导入安全、部署文档、
