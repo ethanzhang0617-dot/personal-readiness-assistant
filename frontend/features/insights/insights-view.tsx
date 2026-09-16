@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 
 import { ExposureList } from "@/components/exposure-list";
 import { PageHeader } from "@/components/page-header";
+import { PersonalResponseSummary, ResponseEpisodeList } from "@/components/personal-response";
 import { StatePanel } from "@/components/state-panel";
 import { StatusBadge } from "@/components/status-badge";
 import { TrendChart } from "@/components/trend-chart";
@@ -15,6 +16,7 @@ import { formatNumber, formatShortDate } from "@/lib/format";
 import { asNumber, asString } from "@/lib/measurements";
 import { useUserState } from "@/lib/state-provider";
 import type { InsightsResponse } from "@/types/api";
+import type { PersonalResponse } from "@/types/api";
 
 const WINDOWS = [
   { value: 28, label: "28" },
@@ -23,10 +25,11 @@ const WINDOWS = [
 ];
 
 export function InsightsView() {
-  const { ready, loadInsights } = useUserState();
+  const { ready, loadInsights, loadPersonalResponse } = useUserState();
   const [window, setWindow] = useState(28);
   const [data, setData] = useState<InsightsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [response, setResponse] = useState<PersonalResponse | null>(null);
 
   useEffect(() => {
     if (!ready) return;
@@ -44,6 +47,17 @@ export function InsightsView() {
       cancelled = true;
     };
   }, [loadInsights, ready, window]);
+
+  useEffect(() => {
+    if (!ready) return;
+    let cancelled = false;
+    loadPersonalResponse().then((result) => {
+      if (!cancelled && result.ok && result.data) setResponse(result.data);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [loadPersonalResponse, ready]);
 
   if (!ready || (!data && !error)) {
     return (
@@ -147,6 +161,26 @@ export function InsightsView() {
 
       <Section eyebrow="This week" title="Weekly exposure">
         <ExposureList exposure={data.exposure} />
+      </Section>
+
+      <Section
+        eyebrow="Personal response"
+        title="How you tend to respond"
+        description="Built from your logged sessions, your own post-session feedback and the next morning check-in. Observed patterns only."
+      >
+        {response ? (
+          <div className="space-y-4">
+            {response.reason ? (
+              <p className="text-[0.8rem] leading-relaxed">
+                {response.adjustment ? response.reason : (response.detail ?? "No adjustment today.")}
+              </p>
+            ) : null}
+            <PersonalResponseSummary response={response} />
+            <ResponseEpisodeList episodes={response.episodes} />
+          </div>
+        ) : (
+          <Skeleton className="h-32 w-full" />
+        )}
       </Section>
 
       <Section eyebrow="History" title="Readiness assessments">

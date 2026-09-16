@@ -8,6 +8,7 @@ import type {
   CoachKind,
   CoachTurn,
   InsightsResponse,
+  PersonalResponse,
   ProfileEdits,
   ProfileSummary,
   TodayResponse,
@@ -30,6 +31,8 @@ export interface ActionResult {
   ok: boolean;
   error?: string;
   message?: string;
+  /** Set by logSession so the UI can immediately ask for post-session feedback. */
+  sessionId?: string;
 }
 
 interface UserStateContextValue {
@@ -48,6 +51,12 @@ interface UserStateContextValue {
   submitCheckIn: (values: Record<string, unknown>) => Promise<ActionResult>;
   saveProfile: (edits: ProfileEdits) => Promise<ActionResult>;
   logSession: (details: Record<string, unknown>) => Promise<ActionResult>;
+  submitFeedback: (
+    sessionId: string,
+    feedback: { difficulty: number; performance: number; completion: string; note?: string },
+  ) => Promise<ActionResult>;
+  loadPersonalResponse: () => Promise<{ ok: boolean; data?: PersonalResponse; error?: string }>;
+  seedResponseDemo: (caseName: string) => Promise<ActionResult>;
   askCoach: (question: string) => Promise<ActionResult>;
   clearChat: () => Promise<void>;
   loadInsights: (window?: number) => Promise<{ ok: boolean; data?: InsightsResponse; error?: string }>;
@@ -146,7 +155,9 @@ export function UserStateProvider({ children }: { children: ReactNode }) {
 
   const mutate = useCallback(
     async (
-      run: (current: UserState) => Promise<{ state: UserState; today?: TodayResponse; message?: string } | { error: string }>,
+      run: (current: UserState) => Promise<
+        { state: UserState; today?: TodayResponse; message?: string; sessionId?: string } | { error: string }
+      >,
     ) => {
       if (!state) return { ok: false, error: "The local profile is still loading." };
       setBusy(true);
@@ -158,7 +169,11 @@ export function UserStateProvider({ children }: { children: ReactNode }) {
         if (outcome.today) setToday(outcome.today);
         await persist(nextStates, chats, activeId);
         setError(null);
-        return { ok: true, message: outcome.message };
+        return {
+          ok: true,
+          message: outcome.message,
+          sessionId: "sessionId" in outcome ? (outcome.sessionId as string | undefined) : undefined,
+        };
       } finally {
         setBusy(false);
       }
@@ -230,9 +245,45 @@ export function UserStateProvider({ children }: { children: ReactNode }) {
           state: result.data.state,
           today: result.data.today,
           message: `Logged ${result.data.session.primary_focus} · ${result.data.session.session_load} AU.`,
+          sessionId: String(result.data.session.session_id),
         };
       }),
     [mutate],
+  );
+
+  const submitFeedback = useCallback(
+    (sessionId: string, feedback: { difficulty: number; performance: number; completion: string; note?: string }) =>
+      mutate(async (current) => {
+        const result = await api.stateFeedback(current, sessionId, feedback);
+        if (!result.ok) return { error: result.error };
+        return {
+          state: result.data.state,
+          today: result.data.today,
+          message: "Response saved. We'll compare it with your next check-in.",
+        };
+      }),
+    [mutate],
+  );
+
+  const loadPersonalResponse = useCallback(async () => {
+    if (!effective) return { ok: false as const, error: "The local profile is still loading." };
+    const result = await api.statePersonalResponse(effective);
+    if (!result.ok) return { ok: false as const, error: result.error };
+    return { ok: true as const, data: result.data };
+  }, [effective]);
+
+  /** Demo control: seed a Personal Response history case into this browser. */
+  const seedResponseDemo = useCallback(
+    async (caseName: string) => {
+      const result = await api.stateBaseWithDemo(activeId, state?.scenario ?? undefined, caseName);
+      if (!result.ok) return { ok: false, error: result.error };
+      const nextStates = { ...states, [activeId]: result.data.state };
+      setStates(nextStates);
+      await persist(nextStates, chats, activeId);
+      await refreshToday(forToday(result.data.state));
+      return { ok: true, message: `Demo response history loaded: ${caseName}` };
+    },
+    [activeId, chats, persist, refreshToday, state?.scenario, states],
   );
 
   const askCoach = useCallback(
@@ -389,6 +440,9 @@ export function UserStateProvider({ children }: { children: ReactNode }) {
     submitCheckIn,
     saveProfile,
     logSession,
+    submitFeedback,
+    loadPersonalResponse,
+    seedResponseDemo,
     askCoach,
     clearChat,
     loadInsights,

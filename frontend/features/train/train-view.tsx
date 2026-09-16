@@ -7,6 +7,8 @@ import { useMemo, useState } from "react";
 import { DecisionTrace } from "@/components/decision-trace";
 import { ExposureList } from "@/components/exposure-list";
 import { PageHeader } from "@/components/page-header";
+import { PersonalResponseSummary, ResponseEpisodeList } from "@/components/personal-response";
+import { PostSessionFeedback } from "@/components/post-session-feedback";
 import { StatePanel } from "@/components/state-panel";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -38,6 +40,7 @@ export function TrainView() {
   const [actualSets, setActualSets] = useState<Record<string, number>>({});
   const [outcome, setOutcome] = useState<string | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
+  const [loggedSessionId, setLoggedSessionId] = useState<string | null>(null);
 
   const options = useMemo<SessionOption[]>(() => {
     if (!today) return [];
@@ -117,6 +120,7 @@ export function TrainView() {
     });
     if (result.ok) {
       setOutcome(result.message ?? "Session logged.");
+      setLoggedSessionId(result.sessionId ?? null);
       setNotes("");
       setActualSets({});
     } else {
@@ -218,6 +222,19 @@ export function TrainView() {
 
       <DecisionTrace steps={today.training.decision_trace} rationale={recommendation.rationale} />
 
+      <Section
+        eyebrow="Personal response"
+        title="Response history"
+        description="Each episode links the session you logged, your feedback and the next check-in."
+      >
+        {today.personal_response ? (
+          <div className="space-y-4">
+            <PersonalResponseSummary response={today.personal_response} />
+            <ResponseEpisodeList episodes={today.personal_response.episodes} limit={5} />
+          </div>
+        ) : null}
+      </Section>
+
       <Section eyebrow="After training" title="Log completed workout">
         <Card className="space-y-4 p-4">
           <p className="text-[0.72rem] leading-relaxed text-muted">
@@ -310,6 +327,18 @@ export function TrainView() {
           </Button>
         </Card>
       </Section>
+
+      {loggedSessionId ? (
+        <Section eyebrow="Personal response" title="Session feedback" divided={false}>
+          <Card className="p-4">
+            <PostSessionFeedback
+              sessionId={loggedSessionId}
+              focus={recommendation.primary_name}
+              onDone={(message) => setOutcome(message)}
+            />
+          </Card>
+        </Section>
+      ) : null}
 
       <p className="flex items-start gap-2 text-[0.7rem] leading-relaxed text-muted">
         <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />

@@ -38,6 +38,15 @@ export function TrainingDecision({
           { label: "Effort", value: rir ? `${rir} RIR` : "—" },
         ]}
       />
+
+      {recommendation.adaptation ? (
+        <p className="text-[0.74rem] leading-relaxed text-muted">
+          <span className="font-semibold text-foreground">{recommendation.adaptation.label}</span>
+          {recommendation.adaptation.from && recommendation.adaptation.to
+            ? ` · ${recommendation.adaptation.from} → ${recommendation.adaptation.to} demand`
+            : ""}
+        </p>
+      ) : null}
     </section>
   );
 }

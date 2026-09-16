@@ -8,7 +8,8 @@
     "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "check:store": "node scripts/check-store-migration.mjs"
   },
   "dependencies": {
     "class-variance-authority": "0.7.1",

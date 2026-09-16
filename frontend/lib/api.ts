@@ -8,6 +8,7 @@ import type {
   ProfileEdits,
   ProfileOptionsResponse,
   ProfileSummary,
+  PersonalResponse,
   ReadinessSummary,
   RecentSession,
   ScienceReferencesResponse,
@@ -70,9 +71,9 @@ export const api = {
   // Phase 2 — the browser owns the state and posts it for computation.
   scenarios: () => request<ScenarioListResponse>("/api/scenarios"),
   stateBase: (profileId?: string, scenario?: string) =>
-    request<BaseStateResponse>(
-      `/api/state/base${profileId ? `?profile_id=${encodeURIComponent(profileId)}` : ""}${scenario ? `${profileId ? "&" : "?"}scenario=${encodeURIComponent(scenario)}` : ""}`,
-    ),
+    request<BaseStateResponse>(`/api/state/base${_stateBaseQuery(profileId, scenario)}`),
+  stateBaseWithDemo: (profileId: string | undefined, scenario: string | undefined, responseDemo: string) =>
+    request<BaseStateResponse>(`/api/state/base${_stateBaseQuery(profileId, scenario, responseDemo)}`),
   stateToday: (state: UserState) =>
     request<StateEnvelope>("/api/state/today", { method: "POST", body: JSON.stringify({ state }) }),
   stateCheckIn: (state: UserState, checkIn: Record<string, unknown>) =>
@@ -86,4 +87,22 @@ export const api = {
   stateInsights: (state: UserState, window?: number) =>
     request<InsightsResponse>("/api/state/insights", { method: "POST", body: JSON.stringify({ state, window: window ?? null }) }),
   profileOptions: () => request<ProfileOptionsResponse>("/api/profile/options"),
+  // V1.3 — Personal Response
+  stateFeedback: (state: UserState, sessionId: string, feedback: { difficulty: number; performance: number; completion: string; note?: string }) =>
+    request<StateEnvelope>("/api/state/feedback", {
+      method: "POST",
+      body: JSON.stringify({ state, session_id: sessionId, ...feedback }),
+    }),
+  statePersonalResponse: (state: UserState) =>
+    request<PersonalResponse>("/api/state/personal-response", { method: "POST", body: JSON.stringify({ state }) }),
+  personalResponse: (responseDemo?: string) =>
+    request<PersonalResponse>(`/api/personal-response${responseDemo ? `?response_demo=${encodeURIComponent(responseDemo)}` : ""}`),
 };
+
+function _stateBaseQuery(profileId?: string, scenario?: string, responseDemo?: string): string {
+  const parts: string[] = [];
+  if (profileId) parts.push(`profile_id=${encodeURIComponent(profileId)}`);
+  if (scenario) parts.push(`scenario=${encodeURIComponent(scenario)}`);
+  if (responseDemo) parts.push(`response_demo=${encodeURIComponent(responseDemo)}`);
+  return parts.length ? `?${parts.join("&")}` : "";
+}

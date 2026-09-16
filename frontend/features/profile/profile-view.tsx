@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 
 import { PageHeader } from "@/components/page-header";
 import { ProfileSwitcher } from "@/components/profile-switcher";
+import { ResponseDemoControl } from "@/components/response-demo-control";
 import { ScenarioSwitcher } from "@/components/scenario-switcher";
 import { StatePanel } from "@/components/state-panel";
 import { Badge } from "@/components/ui/badge";
@@ -279,6 +280,7 @@ export function ProfileView() {
           <div className="space-y-3">
             <ScenarioSwitcher />
             <ProfileSwitcher />
+            <ResponseDemoControl />
           </div>
           {scenario ? <p className="mt-2 text-[0.68rem] text-muted">Active scenario: {scenario}</p> : null}
         </Section>

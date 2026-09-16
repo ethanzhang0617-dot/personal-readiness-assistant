@@ -74,6 +74,10 @@ export interface TrainingRecommendation {
   split: string | null;
   muscle_groups: string[];
   session_demand: string;
+  /** V1.3: the engine's own demand is kept next to the final, adapted one. */
+  base_session_demand?: string | null;
+  personal_response?: PersonalResponse | null;
+  adaptation?: PersonalResponseAdaptation | null;
   duration: string;
   estimated_duration_min_range: number[] | null;
   rir_guidance: string | null;
@@ -156,6 +160,7 @@ export interface TodayResponse {
     history: RecentSession[];
   };
   why: TodayWhy;
+  personal_response?: PersonalResponse;
   generated_at: string;
   source: string;
 }
@@ -282,7 +287,7 @@ export interface DailyRow {
 
 export interface SessionRow {
   session_id: string;
-  date: string;
+  date?: string | null;
   training_type?: string | null;
   primary_focus?: string | null;
   muscle_groups?: string[];
@@ -295,6 +300,116 @@ export interface SessionRow {
   working_sets?: number | null;
   notes?: string | null;
   completed?: boolean;
+  /** V1.3 response episode data attached to a session. */
+  response_context?: ResponseSnapshot | null;
+  response_feedback?: ResponseFeedback | null;
+}
+
+export interface ResponseSnapshot {
+  captured_at?: string;
+  readiness_status?: string | null;
+  readiness_index?: number | null;
+  readiness_confidence?: string | null;
+  base_session_demand?: string | null;
+  final_session_demand?: string | null;
+  adjustment?: number;
+  recommended_focus?: string | null;
+  recommended_duration?: string | null;
+  recommended_rir?: string | null;
+  local_soreness?: Record<string, number>;
+  exposure_note?: string | null;
+}
+
+export interface ResponseFeedback {
+  difficulty: number;
+  performance: number;
+  completion: string;
+  note?: string | null;
+  submitted_at?: string;
+}
+
+export interface PersonalResponseAdaptation {
+  label: string;
+  direction: string;
+  from: string | null;
+  to: string | null;
+  reason: string;
+}
+
+export interface ResponseEpisode {
+  session_id: string;
+  date: string;
+  focus: string | null;
+  band: string | null;
+  before: {
+    readiness_status: string | null;
+    readiness_index: number | null;
+    confidence: string | null;
+    local_soreness: Record<string, number>;
+  };
+  recommendation: {
+    base_demand: string | null;
+    final_demand: string | null;
+    band: string | null;
+    adjustment: number;
+    duration: string | null;
+    rir: string | null;
+    exposure_note: string | null;
+  };
+  performed: {
+    duration_min: number | null;
+    session_rpe: number | null;
+    working_sets: number | null;
+    completion: string | null;
+  };
+  feedback: ResponseFeedback | null;
+  after: {
+    date: string;
+    fatigue: number | null;
+    soreness: number | null;
+    motivation: number | null;
+    stress: number | null;
+    sleep_hours: number | null;
+    rmssd_ms: number | null;
+    resting_hr_bpm: number | null;
+  } | null;
+  response: { verdict: string; signals: string[] };
+  link: string;
+  complete: boolean;
+}
+
+export interface PersonalResponseBand {
+  band: string;
+  demand: string;
+  observations: number;
+  poorer: number;
+  better: number;
+  pattern: string;
+  evidence: string;
+}
+
+export interface PersonalResponse {
+  available: boolean;
+  base_demand: string | null;
+  base_band: string | null;
+  final_demand: string | null;
+  final_band: string | null;
+  adjustment: number;
+  direction: string;
+  evidence: string | null;
+  reason: string | null;
+  detail: string | null;
+  summary: {
+    episodes_total?: number;
+    episodes_complete?: number;
+    episodes_pending?: number;
+    evidence?: string;
+    bands?: PersonalResponseBand[];
+    note?: string;
+  };
+  bands: PersonalResponseBand[];
+  episodes: ResponseEpisode[];
+  note: string | null;
 }
 
 export interface UserState {

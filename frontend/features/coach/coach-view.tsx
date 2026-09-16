@@ -19,6 +19,12 @@ const STARTERS = [
   "How much have I trained back this week?",
 ];
 
+// Personal Response starters resolve deterministically (zero provider calls).
+const RESPONSE_STARTERS = [
+  "How do I usually respond to high-demand sessions?",
+  "Why was today's session adjusted?",
+];
+
 // Provenance is communicated quietly: a small label above the answer, never a
 // developer badge. Verified answers are the deterministic layer; everything else
 // came from the explanation provider or its rule-based fallback.
@@ -83,6 +89,24 @@ export function CoachView() {
             </div>
             <ul className="divide-y divide-subtle border-y border-subtle">
               {STARTERS.map((starter) => (
+                <li key={starter}>
+                  <button
+                    type="button"
+                    disabled={!ready || busy}
+                    onClick={() => void send(starter)}
+                    className="flex min-h-12 w-full items-center justify-between gap-3 text-left text-sm transition-colors hover:text-foreground disabled:opacity-50"
+                  >
+                    {starter}
+                    <span aria-hidden className="text-muted">
+                      →
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <p className="text-[0.7rem] font-medium text-muted">Personal response</p>
+            <ul className="divide-y divide-subtle border-y border-subtle">
+              {RESPONSE_STARTERS.map((starter) => (
                 <li key={starter}>
                   <button
                     type="button"
