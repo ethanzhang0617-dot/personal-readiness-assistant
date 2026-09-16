@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any, Mapping
 
 import ai_facts
-from training_recommendation_engine import recommend_training
+from training_recommendation_engine import prescription_log_defaults, recommend_training, workout_template
 
 from backend.services import demo_service
 
@@ -40,13 +40,10 @@ def summary(recommendation: Mapping[str, Any]) -> dict[str, Any]:
     exercises = [{"name": item.get("name"), "sets": item.get("working_sets", item.get("sets")),
                   "reps": item.get("reps"), "rir": item.get("rir")}
                  for item in (primary.get("exercises") or [])]
-    alternatives = [{"name": item.get("name"), "training_type": item.get("training_type"),
-                     "focus": item.get("focus"), "muscle_groups": list(item.get("muscle_groups") or []),
-                     "intensity": item.get("intensity"), "duration": item.get("duration"),
-                     "reason": item.get("reason")}
-                    for item in (recommendation.get("alternatives") or [])]
+    alternatives = [_session_summary(item) for item in (recommendation.get("alternatives") or [])]
     return {
         "primary_name": primary.get("name"),
+        "prescription_id": primary.get("prescription_id"),
         "training_type": primary.get("training_type"),
         "focus": primary.get("focus"),
         "split": primary.get("split"),
@@ -62,8 +59,46 @@ def summary(recommendation: Mapping[str, Any]) -> dict[str, Any]:
         "priority": {str(key): list(value) for key, value in (recommendation.get("priority") or {}).items()},
         "volume_modifier": recommendation.get("volume_modifier"),
         "target_source": recommendation.get("target_source"),
+        "template": dict(recommendation.get("template") or {}),
+        "log_defaults": _log_defaults(primary),
         "source": "training_recommendation_engine.recommend_training",
     }
+
+
+def _log_defaults(prescription: Mapping[str, Any]) -> dict[str, Any]:
+    """Per-exercise defaults for the completed-session form, straight from the engine."""
+    if not prescription.get("prescription_id"):
+        return {"exercises": [], "prescribed_sets": 0}
+    defaults = prescription_log_defaults(dict(prescription))
+    return {
+        "exercises": [{"name": item["name"], "prescribed_sets": item["prescribed_sets"]}
+                      for item in defaults.get("exercises", [])],
+        "prescribed_sets": defaults.get("prescribed_sets", 0),
+    }
+
+
+def _session_summary(session: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "name": session.get("name"),
+        "prescription_id": session.get("prescription_id"),
+        "training_type": session.get("training_type"),
+        "focus": session.get("focus"),
+        "muscle_groups": list(session.get("muscle_groups") or []),
+        "intensity": session.get("intensity"),
+        "duration": session.get("duration"),
+        "reason": session.get("reason"),
+        "template": dict(workout_template(dict(session)) or {}),
+        "log_defaults": _log_defaults(session),
+    }
+
+
+def find_session(recommendation: Mapping[str, Any], prescription_id: str | None) -> dict[str, Any]:
+    """Resolve a selected prescription id to the primary or an alternative."""
+    choices = [dict(recommendation.get("primary") or {}), *[dict(item) for item in (recommendation.get("alternatives") or [])]]
+    for choice in choices:
+        if choice.get("prescription_id") and choice.get("prescription_id") == prescription_id:
+            return choice
+    return choices[0]
 
 
 def exposure(profile: Mapping[str, Any], assessment: Mapping[str, Any],
