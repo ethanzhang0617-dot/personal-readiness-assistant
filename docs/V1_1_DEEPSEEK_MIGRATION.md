@@ -113,8 +113,8 @@ Unit tests never contact the provider: they inject a fake transport with
 
 ## Live QA — verified
 
-Run against the real API with a locally configured key (key never printed). Two passes plus a
-diagnostic capture, 20 provider calls in total, all to
+Run against the real API with a locally configured key (key never printed). Three pre-patch passes
+plus the post-patch re-run, **18 provider calls in total** (3 + 7 + 1 + 7), all to
 `https://api.deepseek.com/chat/completions`:
 
 | Item | Result |
