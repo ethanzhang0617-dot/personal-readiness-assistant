@@ -124,6 +124,17 @@ def muscle_groups_from_text(text: str) -> tuple[tuple[str, ...], str | None]:
 EXPOSURE_PERIOD = "the last seven days including today"
 TRAINING_LOAD_PERIOD = "the last 7 complete calendar days"
 
+#: Documented Readiness Index scale. ``max`` is a product constant rather than a
+#: personal measurement, so it is deliberately *not* part of ``facts_numbers``:
+#: it is licensed only immediately next to the verified index value, by
+#: ``guard_llm_response``. See ``SCALE_METADATA_KEYS``.
+READINESS_INDEX_SCALE: dict[str, int] = {"min": 0, "max": 100}
+
+#: Metadata keys that describe a *scale* instead of a personal measurement. The
+#: generic numeric guard skips them so that a documented scale bound can never
+#: authorise "100 minutes", "100 weighted working sets" or "100 bpm" on its own.
+SCALE_METADATA_KEYS: tuple[str, ...] = ("index_scale",)
+
 
 def _as_date(value: Any) -> date | None:
     if isinstance(value, date):
@@ -179,6 +190,7 @@ def build_personal_facts(profile: Mapping[str, Any], assessment: Mapping[str, An
         "readiness": {
             "status": assessment.get("overall_readiness"),
             "index": assessment.get("readiness_index"),
+            "index_scale": dict(READINESS_INDEX_SCALE),
             "confidence": assessment.get("assessment_confidence"),
             "domains": dict(assessment.get("domains") or {}),
             "contributors": list(assessment.get("key_contributors") or []),
@@ -278,7 +290,9 @@ def facts_numbers(facts: Mapping[str, Any]) -> set[str]:
 
     def walk(node: Any) -> None:
         if isinstance(node, Mapping):
-            for value in node.values():
+            for key, value in node.items():
+                if key in SCALE_METADATA_KEYS:
+                    continue
                 walk(value)
         elif isinstance(node, (list, tuple, set)):
             for value in node:
@@ -296,11 +310,21 @@ def facts_numbers(facts: Mapping[str, Any]) -> set[str]:
     return numbers
 
 
+def _readiness_index_semantics(readiness: Mapping[str, Any]) -> str:
+    """Readiness-index wording that always carries its scale, or declares it missing."""
+    index = readiness.get("index")
+    scale = readiness.get("index_scale") or READINESS_INDEX_SCALE
+    if index is None:
+        return "readiness index not available"
+    return f"readiness index {index} on a {scale['min']}–{scale['max']} scale"
+
+
 def facts_for_prompt(facts: Mapping[str, Any]) -> str:
     """Unit-bearing context. Never emits a bare number."""
     lines: list[str] = []
     readiness = facts["readiness"]
-    lines.append(f"Today's readiness: {readiness['status']} (index {readiness['index']}/100, baseline confidence {readiness['confidence']}).")
+    lines.append(f"Today's readiness: {readiness['status']} ({_readiness_index_semantics(readiness)}, "
+                 f"baseline confidence {readiness['confidence']}).")
     lines.append("Readiness domains: " + ", ".join(f"{name} {value}" for name, value in readiness["domains"].items()) + ".")
     if readiness["contributors"]:
         lines.append("Main contributors: " + "; ".join(readiness["contributors"][:3]) + ".")
@@ -590,12 +614,18 @@ def grounded_answer(route: Route, facts: Mapping[str, Any]) -> str:
                 f"{recommendation['primary']} ({recommendation['duration']['text']}).")
     if metric in {"readiness", "readiness_index"}:
         readiness = facts["readiness"]
-        index = readiness["index"] if readiness["index"] is not None else "not available"
+        index = readiness["index"]
+        scale = readiness.get("index_scale") or READINESS_INDEX_SCALE
         if metric == "readiness_index":
-            return (f"Your readiness index today is **{index} / 100**, with an overall readiness status of "
+            if index is None:
+                return ("Your readiness index is not available yet - it needs at least three classifiable domains. "
+                        f"Your overall readiness status today is {readiness['status']} with baseline confidence "
+                        f"{readiness['confidence']}.")
+            return (f"Your readiness index today is **{index} / {scale['max']}**, with an overall readiness status of "
                     f"{readiness['status']} and baseline confidence {readiness['confidence']}.")
         domains = ", ".join(f"{name} {value}" for name, value in readiness["domains"].items())
-        return (f"Your readiness today is **{readiness['status']}** (index {index} / 100, baseline confidence "
+        index_text = f"index {index} / {scale['max']}" if index is not None else "index not available"
+        return (f"Your readiness today is **{readiness['status']}** ({index_text}, baseline confidence "
                 f"{readiness['confidence']}). Domains: {domains}.")
     if metric == "baseline_confidence":
         return f"Your baseline confidence is **{facts['readiness']['confidence']}**."
@@ -676,6 +706,44 @@ def _answer_was_wrong(route: Route, previous_answer: str | None, facts: Mapping[
     return False
 
 
+#: Connectives legitimately licensed between a verified readiness index and its
+#: documented scale, e.g. "71 on a 0–100 scale" or "71 (0-100 scale)". Bounded
+#: so the filler can never swallow an unrelated number.
+_SCALE_CONNECTIVE = (r"(?:[\s\-–—(),:/]"
+                     r"|\b(?:points?|out|of|on|a|an|the|scale|index|readiness|is|are)\b){0,24}")
+
+
+def _readiness_scale_expressions(facts: Mapping[str, Any]) -> tuple[re.Pattern[str], ...]:
+    """Spans where the documented readiness scale may appear legitimately.
+
+    Only the *verified* index value may be paired with the documented scale
+    bounds. "100 minutes", "100 weighted working sets" and "83/100" therefore
+    stay invalid, because the verified index value is not in front of them.
+    """
+    readiness = facts.get("readiness") or {}
+    index = readiness.get("index")
+    scale = readiness.get("index_scale") or {}
+    minimum, maximum = scale.get("min"), scale.get("max")
+    if index is None or minimum is None or maximum is None:
+        return ()
+    value = re.escape(f"{float(index):g}")
+    low = re.escape(f"{float(minimum):g}")
+    high = re.escape(f"{float(maximum):g}")
+    return (
+        re.compile(rf"\b{value}\s*/\s*{high}\b"),                                  # 71/100
+        re.compile(rf"\b{value}\s*(?:points?\s*)?out\s+of\s+{high}\b"),             # 71 out of 100
+        re.compile(rf"\b{value}{_SCALE_CONNECTIVE}{low}\s*[-–—]\s*{high}\b"),        # 71 on a 0–100 scale
+    )
+
+
+def _without_readiness_scale(text: str, facts: Mapping[str, Any]) -> str:
+    """Drop licensed readiness-index + scale spans before the numeric guard runs."""
+    masked = text
+    for expression in _readiness_scale_expressions(facts):
+        masked = expression.sub(" ", masked)
+    return masked
+
+
 def guard_llm_response(text: str, facts: Mapping[str, Any], question: str = "", route: Route | None = None) -> tuple[bool, str]:
     """Reject model output that adds numbers, changes units or shifts the period."""
     allowed = facts_numbers(facts)
@@ -684,7 +752,9 @@ def guard_llm_response(text: str, facts: Mapping[str, Any], question: str = "", 
     # question may legitimately quote general guidance, so only unit and period
     # integrity is enforced there.
     if route is None or route.kind != "GENERAL":
-        for number in re.findall(r"\d+(?:\.\d+)?", text):
+        # The documented readiness scale is licensed only next to the verified
+        # index value, so those spans are removed before the allow-list scan.
+        for number in re.findall(r"\d+(?:\.\d+)?", _without_readiness_scale(text, facts)):
             if f"{float(number):g}" not in allowed:
                 return False, f"The draft introduced a number that is not in the verified facts: {number}"
     lowered = text.casefold()

@@ -1699,3 +1699,87 @@ def test_about_page_discloses_the_real_provider_and_privacy_boundary() -> None:
                   "All data stays on device", "all AI runs locally",
                   "Your data stays local", "YOUR DATA STAYS LOCAL"):
         assert stale not in disclosure, stale
+
+
+# --------------------------------------------------------------------------- #
+# PHASE 5.1 — readiness index scale (guard false positive)
+# --------------------------------------------------------------------------- #
+
+
+_NOT_GENERAL = ai_facts.Route("EXPLANATION")
+
+
+def _facts_with_index(index) -> dict:
+    """Real structured facts with a pinned readiness index, so the scale cases are exact."""
+    profile, real_assessment, rec = _coach_fixture()
+    facts = ai_facts.build_personal_facts(profile, real_assessment, rec)
+    facts["readiness"]["index"] = index
+    return facts
+
+
+def test_readiness_index_scale_metadata_lives_in_the_facts() -> None:
+    facts = _facts_with_index(71)
+    assert facts["readiness"]["index_scale"] == ai_facts.READINESS_INDEX_SCALE
+    assert ai_facts.READINESS_INDEX_SCALE == {"min": 0, "max": 100}
+    prompt = ai_facts.facts_for_prompt(facts)
+    assert "readiness index 71 on a 0–100 scale" in prompt
+    # the documented scale maximum is never a free-standing allowed personal number
+    assert "100" not in ai_facts.facts_numbers(facts)
+
+
+def test_readiness_scale_is_accepted_next_to_the_verified_index() -> None:
+    facts = _facts_with_index(71)
+    for draft in ("Your readiness is AMBER (71/100).",
+                  "Your readiness index is 71 on a 0–100 scale.",
+                  "Your readiness index is 71 / 100 today.",
+                  "Your readiness index is 71 out of 100."):
+        accepted, reason = ai_facts.guard_llm_response(draft, facts, "", _NOT_GENERAL)
+        assert accepted, f"{draft} -> {reason}"
+
+
+def test_readiness_scale_does_not_license_unrelated_personal_numbers() -> None:
+    facts = _facts_with_index(71)
+    for draft in ("You should train for 100 minutes.",
+                  "You completed 100 weighted working sets.",
+                  "Your resting heart rate is 100 bpm.",
+                  "Your HRV is 100 ms today."):
+        accepted, reason = ai_facts.guard_llm_response(draft, facts, "", _NOT_GENERAL)
+        assert not accepted, draft
+        assert "100" in reason, f"{draft} -> {reason}"
+
+
+def test_readiness_scale_does_not_license_a_new_index_value() -> None:
+    facts = _facts_with_index(71)
+    accepted, reason = ai_facts.guard_llm_response("Your readiness is 83/100.", facts, "", _NOT_GENERAL)
+    assert not accepted and "83" in reason, reason
+    # an invented index is still rejected when the real index is absent
+    empty = _facts_with_index(None)
+    accepted, reason = ai_facts.guard_llm_response("Your readiness index is 71 on a 0–100 scale.", empty, "", _NOT_GENERAL)
+    assert not accepted and "71" in reason, reason
+
+
+def test_missing_readiness_index_never_renders_a_misleading_ratio() -> None:
+    facts = _facts_with_index(None)
+    prompt = ai_facts.facts_for_prompt(facts)
+    assert "readiness index not available" in prompt
+    assert "100" not in prompt
+    for metric in ("readiness", "readiness_index"):
+        answer = ai_facts.grounded_answer(ai_facts.Route("PERSONAL_FACT", metric=metric), facts)
+        assert "not available" in answer, metric
+        assert "/ 100" not in answer and "/100" not in answer, metric
+
+
+def test_grounded_readiness_ratio_draft_is_accepted_end_to_end(monkeypatch) -> None:
+    profile, real_assessment, rec = _coach_fixture()
+    index = real_assessment.get("readiness_index")
+    assert index is not None      # the demo check-in classifies at least three domains
+    draft = (f"{rec['primary']['name']} stays primary because your readiness is "
+             f"{real_assessment['overall_readiness']} ({index:g}/100) and weekly exposure drives the split.")
+    _reset_diagnostics()
+    _install_transport(monkeypatch, _provider_payload(draft))
+
+    answer, provider, notice = get_ai_response("Why this workout?", profile, real_assessment, rec, [], _CONFIGURED)
+
+    assert provider == ai_engine.AI_PROVIDER_LABEL, notice
+    assert notice is None
+    assert answer == draft
