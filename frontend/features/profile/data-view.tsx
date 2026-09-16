@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { ArrowLeft, CircleCheck, Info, TriangleAlert } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { PageHeader } from "@/components/page-header";
 import { StatePanel } from "@/components/state-panel";
@@ -21,11 +21,16 @@ export function DataView() {
   const [error, setError] = useState<string | null>(null);
   const [aiConfigured, setAiConfigured] = useState<boolean | null>(null);
 
-  useState(() => {
+  // AI availability is fetched once; presence only, never the credential itself.
+  useEffect(() => {
+    let cancelled = false;
     api.health().then((result) => {
-      if (result.ok) setAiConfigured(result.data.ai_credential_configured);
+      if (!cancelled && result.ok) setAiConfigured(result.data.ai_credential_configured);
     });
-  });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   if (!ready) {
     return <StatePanel title="Loading local data…" body="Reading this browser's stored data." />;
