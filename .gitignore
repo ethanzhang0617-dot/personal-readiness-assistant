@@ -10,6 +10,10 @@ models/
 *.gguf
 .env
 .env.*
+# The single exception: the frontend environment example. It contains no secret
+# and exists so a reviewer can see exactly which public value is configurable.
+# Real files such as frontend/.env.local and frontend/.env.production stay ignored.
+!frontend/.env.example
 *.db
 *.sqlite
 *.sqlite3
