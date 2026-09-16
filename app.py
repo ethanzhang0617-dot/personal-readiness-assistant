@@ -22,8 +22,10 @@ from mobile_shell import mobile_shell_bridge
 from profile_store import (create_profile, delete_profile, generate_sample_history, get_profile, initialise_store,
                            list_profiles, log_training_session, save_assessment, save_recommendation,
                            set_active_profile, update_profile, upsert_daily_metric)
+from product_options import ACTIVITIES, GOALS, LEVELS, SEXES, SPLITS
 from readiness_engine import (AMBER, BASELINE_LIMITED_DAYS, BASELINE_NORMAL_DAYS, GREEN, INSUFFICIENT, RED,
                               SAFETY_FLAGS, assess_readiness, ln_rmssd)
+from scenario_data import SCENARIOS, scenario_values
 from styles import inject_styles
 from science_content import EVIDENCE_BOUNDARIES, EVIDENCE_LABELS, EVIDENCE_MAP, LIMITATIONS, READINESS_RULE_METADATA, RECOMMENDATION_RULE_METADATA, REFERENCES
 from training_recommendation_engine import MUSCLE_GROUPS, prescription_log_defaults, recommend_training, workout_template
@@ -39,12 +41,6 @@ from ui_components import mobile_bottom_nav_component, mobile_utility_nav_compon
 
 st.set_page_config(page_title="Personal Readiness Assistant", page_icon="⚡", layout="wide", initial_sidebar_state="expanded")
 
-ACTIVITIES = ("Strength Training", "Running", "Cycling", "HYROX / Functional Fitness", "Team Sports", "General Fitness", "Other")
-GOALS = ("General Fitness", "Strength", "Muscle Gain", "Fat Loss", "Endurance", "Performance", "Recovery / Health", "Other")
-LEVELS = ("Beginner", "Intermediate", "Advanced")
-SEXES = ("Male", "Female", "Prefer not to say")
-SPLITS = ("No Preference", "Body Part Split", "Push / Pull / Legs", "Upper / Lower", "Full Body", "Running-focused", "Hybrid")
-SCENARIOS = ("Well Recovered Day", "Moderate Fatigue Day", "High Load / Poor Sleep Day")
 MORE_NAV_ITEMS = SECONDARY_NAV_ITEMS
 NAV_ITEMS = PRIMARY_NAV_ITEMS + SECONDARY_NAV_ITEMS
 
@@ -157,25 +153,6 @@ def _sync_browser_storage() -> None:
     elif pending and command["operation"] in {"save", "clear"}:
         st.session_state.pending_storage = None
         st.session_state.storage_status = "Saved locally in this browser." if command["operation"] == "save" else "Local browser history cleared."
-
-
-def _mean(values: list[float]) -> float | None:
-    return round(sum(values) / len(values), 1) if values else None
-
-
-def scenario_values(profile: dict[str, Any], scenario: str) -> dict[str, Any]:
-    """Demo convenience only; it does not change the Readiness Engine."""
-    history = profile["history"][-28:]
-    def average(field: str, fallback: float) -> float:
-        values = [float(row[field]) for row in history if row.get(field) is not None]
-        return _mean(values) or fallback
-    hrv, rhr = average("rmssd_ms", 55.0), average("resting_hr_bpm", 58.0)
-    sleep_need = float(profile["personal_sleep_need"])
-    if scenario == "High Load / Poor Sleep Day":
-        return {"rmssd_ms": round(hrv * .82, 1), "resting_hr_bpm": round(rhr + 5), "sleep_hours": round(sleep_need * .72, 1), "sleep_quality": 2, "fatigue": 4, "soreness": 4, "stress": 4, "motivation": 2, "safety_flags": []}
-    if scenario == "Moderate Fatigue Day":
-        return {"rmssd_ms": round(hrv * .94, 1), "resting_hr_bpm": round(rhr + 1), "sleep_hours": round(sleep_need * .95, 1), "sleep_quality": 4, "fatigue": 2, "soreness": 2, "stress": 2, "motivation": 4, "safety_flags": []}
-    return {"rmssd_ms": round(hrv * 1.04, 1), "resting_hr_bpm": round(max(35, rhr - 1)), "sleep_hours": round(sleep_need * 1.01, 1), "sleep_quality": 5, "fatigue": 1, "soreness": 1, "stress": 2, "motivation": 5, "safety_flags": []}
 
 
 def draft_key(profile: dict[str, Any]) -> str:
