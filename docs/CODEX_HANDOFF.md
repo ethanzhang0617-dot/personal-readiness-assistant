@@ -155,7 +155,21 @@ Decision Trace **不是** LLM chain-of-thought，也不是 debug log；它是产
 * `How much have I trained back this week?` 及所有 personal factual / correction 轮次对 provider 的调用数必须为 **0**。
 * 模型草稿若新增未记录数字、改单位、改周期、替换 primary recommendation 或编造 rationale，必须被 guard 拦截。
 
-# Frontend Migration Status（V1.2 Phase 3 UI polish 已完成，本地未 push）
+# Frontend Migration Status（V1.2 Phase 4 Release Candidate，本地未 push）
+
+* Phase 4 = **发布就绪**（无新功能）：运行时配置（`frontend/.env.example` 单一样本；后端环境变量见
+  `docs/V1_2_DEPLOYMENT.md`）、CORS 生产配置说明、跨引擎 QA、API/AI 不可用行为、导入安全、部署文档、
+  以及必需的 ZIP 交付包。
+* **测试中发现并修复的移动端问题**：表单控件在小屏统一 16px（避免 iOS 聚焦缩放）；原生 `<select>`
+  改用固定高度（**WebKit 忽略 min-height，Safari 上只有 23px**）；分段控件、酸痛选择框、周目标输入框、
+  档案 chip、返回链接统一到 44px 触控目标。
+* Phase 4 验证（生产构建 + `next start` 实测）：跨引擎 **54/54**（Chromium + WebKit × 3 视口 × 9 路由，
+  0 控制台错误）· 功能回归 Chromium **20/20**、WebKit **20/20** · 导入导出 **10/10** ·
+  API 不可用 **6/6** · AI 不可用 **7/7** · Python **161/161** · 前端 typecheck / lint / build 全绿。
+* **真机未验证**：无物理 iOS/Android 设备；WebKit 26.5 是 Safari 兼容引擎，不等同于真机 Safari。
+  Firefox 在本机无法启动（macOS 沙箱拒绝其 plugin-container），属环境限制。
+* 交付物：`Personal_Readiness_Assistant_V1.2_Phase4_Release_Candidate.zip`（已做密钥扫描与解包核验）。
+* 细节见 `docs/V1_2_RELEASE_QA.md` 与 `docs/V1_2_DEPLOYMENT.md`。
 
 * Phase 3 = **纯展示层打磨**：设计系统（graphite/off-white 中性色、四级字阶、统一间距节奏、
   Lucide 图标、统一 focus、reduced-motion）、用 `Section` 取代"卡片墙"、Today 重构为旗舰页

@@ -1,5 +1,41 @@
 # Personal Readiness Assistant
 
+## V1.2 release candidate — run this
+
+The current product is a **Next.js frontend + FastAPI backend**. The Streamlit app described further
+down is the V1.1 reference implementation and is not the primary product.
+
+```bash
+# Terminal 1 — backend (from the repository root)
+python3 -m uvicorn backend.main:app --host 0.0.0.0 --port 8000
+
+# Terminal 2 — frontend
+cd frontend
+pnpm install
+NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000 pnpm build
+NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000 pnpm start --port 3000
+# or, for development: pnpm dev --port 3000
+```
+
+Open <http://localhost:3000>.
+
+| Question | Answer |
+|---|---|
+| What is it? | A readiness-aware strength-training decision assistant: how ready you are today, what to train, how hard, and why. |
+| Frontend stack | Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS 4, shadcn/ui-style primitives, pnpm. |
+| Backend stack | FastAPI adapter over the existing deterministic Python engines. Stateless. |
+| Where is my data? | Check-ins, logged sessions, profile edits and Coach history live in **this browser's IndexedDB**. The API stores nothing. |
+| Do I need an API key? | No. Without `DEEPSEEK_API_KEY` everything works and explanation questions return the deterministic answer. |
+| How do I configure the key safely? | Put `DEEPSEEK_API_KEY` in `.streamlit/secrets.toml` (gitignored) or the environment, on the **backend** only. Never in a `NEXT_PUBLIC_*` variable. |
+| Demo scenarios | Profile → Demo controls: three fixed simulated check-ins (well recovered / moderate fatigue / high load) plus the three demo profiles. |
+| Tests | `python3 -m pytest -v` (161 tests) and `cd frontend && pnpm lint && pnpm typecheck && pnpm build`. |
+
+Full documentation: `docs/V1_2_DEPLOYMENT.md` (deployment and environment),
+`docs/V1_2_RELEASE_QA.md` (QA record), `docs/V1_2_FRONTEND_MIGRATION.md` (migration),
+`docs/V1_2_FUNCTIONAL_PARITY.md` (Streamlit comparison), `docs/V1_2_UI_POLISH.md` (design system).
+
+## V1.1 reference implementation (Streamlit)
+
 **Release candidate: Personal Readiness Assistant V1.0 — Portfolio Release**
 
 An English-only Streamlit web prototype for two daily questions:

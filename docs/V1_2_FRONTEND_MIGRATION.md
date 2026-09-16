@@ -1,8 +1,8 @@
 # V1.2 — Frontend Architecture Migration (Phase 1)
 
 **Branch:** `v1.2-nextjs-migration` (created from `v1.1-productization` at `0c42048`)
-**Status:** Phase 1 pushed (`84fee69`). Phase 2 pushed (`a00c4e2`). Phase 3 UI polish complete
-locally, **not pushed**.
+**Status:** Phase 1 pushed (`84fee69`). Phase 2 pushed (`a00c4e2`). Phase 3 pushed (`9cebb8a`).
+Phase 4 release-candidate work is local, **not pushed**.
 
 > Phase 2 adds the write path: morning check-in, completed-session logging, profile and weekly-target
 > editing, demo scenario and profile switching, browser-local persistence with export/import,
@@ -11,6 +11,10 @@ locally, **not pushed**.
 >
 > Phase 3 polishes the presentation into a portfolio-quality product UI without adding features.
 > See `docs/V1_2_UI_POLISH.md` for the visual direction, the component changes and the QA.
+>
+> Phase 4 hardens the release candidate: runtime configuration, cross-engine QA, API/AI
+> unavailability behaviour, import safety, deployment documentation and a packaged ZIP. See
+> `docs/V1_2_DEPLOYMENT.md` and `docs/V1_2_RELEASE_QA.md`.
 
 ## 1. Goal
 
@@ -152,7 +156,7 @@ HR, sleep and load), the demo scenario switcher, and the developer diagnostics p
 * DeepSeek credentials are read by the FastAPI process from `.streamlit/secrets.toml` or the
   `DEEPSEEK_API_KEY` environment variable. They are never sent to the browser: `/api/health`
   reports only whether a credential is configured.
-* No `NEXT_PUBLIC_*` variable may carry a secret; `frontend/env.example` documents that the only
+* No `NEXT_PUBLIC_*` variable may carry a secret; `frontend/.env.example` documents that the only
   public value is `NEXT_PUBLIC_API_BASE_URL`.
 * `.streamlit/secrets.toml` remains gitignored and untracked.
 * CORS allows only `http://localhost:3000` and `http://127.0.0.1:3000` unless a deployment sets
@@ -289,3 +293,29 @@ Presentation-only pass. No product feature, engine, contract or AI change.
 Verification for this phase: 45/45 route-viewport combinations (five viewports × nine routes) with
 zero horizontal overflow and no controls under the bottom navigation; the Phase 2 functional
 journey still passes 20/20; Python 161/161; frontend typecheck, lint and build clean.
+
+---
+
+# Phase 4 — Release Candidate (implemented)
+
+No new features. Release hardening only.
+
+* **Runtime configuration:** `frontend/.env.example` documents the single public value
+  (`NEXT_PUBLIC_API_BASE_URL`, inlined at build time); the repository ignore rules were given one
+  narrow exception so the example file can ship while `.env`, `.env.local` and `.env.production`
+  stay ignored. Backend variables (`DEEPSEEK_API_KEY`, `DEEPSEEK_MODEL`, `DEEPSEEK_BASE_URL`,
+  `DISABLE_AI_COACH`, `ARA_FRONTEND_ORIGINS`) are documented in the deployment guide.
+* **CORS:** unchanged in behaviour (explicit origin list, never `*`) and now documented for
+  production and LAN testing.
+* **Mobile fixes found by testing:** form controls render at 16px on small screens so iOS does not
+  zoom on focus; native `<select>` elements use a fixed height because WebKit ignores `min-height`
+  on them (they rendered 23px in Safari); segmented controls, soreness selects, weekly-target
+  inputs, profile chips and back links were brought to 44px touch targets.
+* **Verification:** production build served by `next start`, then 54/54 cross-engine UI combinations
+  (Chromium + WebKit × three mobile viewports × nine routes, zero console errors), 20/20 functional
+  regression in each engine, 10/10 import/export checks, 6/6 API-unavailable checks and 7/7
+  AI-unavailable checks.
+* **Packaging:** the repository is exported as
+  `Personal_Readiness_Assistant_V1.2_Phase4_Release_Candidate.zip` with the exclusion list from the
+  phase brief (no `.git`, dependencies, caches, secrets or screenshots) and a secret scan before
+  creation.
