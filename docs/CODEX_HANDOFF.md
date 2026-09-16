@@ -14,11 +14,12 @@
 | 项目 | 值 |
 |---|---|
 | Branch | `v1.1-productization` |
-| Latest product commit | `4f27d22` `feat(ai): migrate coach explanations to DeepSeek` |
+| Latest product commit | `6548e08` `fix(ai): recognize readiness index scale in grounding` |
+| 迁移 commit | `4f27d22` `feat(ai): migrate coach explanations to DeepSeek` |
 | 上一阶段 product commit | `c41485d` `feat(coach): refine conversational interface` |
 | Dependency cleanup commit | `fe732fc` `chore(ai): remove local qwen runtime dependencies` |
 | Handoff commit | 见本文件所在 commit（`docs: update ai provider and privacy disclosure`） |
-| Test baseline | `python -m pytest -v` → **127 passed** |
+| Test baseline | `python -m pytest -v` → **133 passed** |
 | Compile | `python -m compileall .` → PASS |
 | GitHub remote (`origin`) | `https://github.com/ethanzhang0617-dot/personal-readiness-assistant.git` |
 | Tags | 仅 `v1.0.0`（V1.1 未打 tag、未发 Release） |
@@ -136,6 +137,7 @@ Decision Trace **不是** LLM chain-of-thought，也不是 debug log；它是产
 | API key | Streamlit secrets `DEEPSEEK_API_KEY` → 其次环境变量 `DEEPSEEK_API_KEY` |
 | Key 安全 | 不 hardcode、不 commit、不打印、不写 browser storage、不发前端；错误信息经 `_redact()` 过滤 `sk-*` |
 | 输出上限 | `MAX_OUTPUT_TOKENS = 400`；`REQUEST_TIMEOUT_SECONDS = 20.0` |
+| 实测延迟 | 中位数 2.9 s（2.36–3.85 s），12 个真实样本 |
 | 请求体防护 | 不打印 provider body；HTTP 状态只保留状态码 |
 | 失败行为 | 缺 key / 401 / 429 / 5xx / timeout / 网络 / 非法或空响应 / 草稿被 guard 拒绝 → 确定性回答 + 用户可见提示，绝不 crash |
 | Diagnostics | 仅记录 token 计数与耗时；不持久化 prompt |
@@ -223,13 +225,14 @@ Decision Trace **不是** LLM chain-of-thought，也不是 debug log；它是产
 
 # Test Baseline
 
-`python -m compileall .` → PASS；`python -m pytest -v` → **126 / 126 passed**。
+`python -m compileall .` → PASS；`python -m pytest -v` → **133 / 133 passed**。
 
 关键 regression 区域：mobile shell 间距契约与 chrome 选择器 · Today 首屏（Readiness / Training / Session Demand / CTA）·
 Train 的 primary 与 alternatives 层级 + 8 步 decision trace · 档案切换与 Demo/Local 隔离 · IndexedDB 写入/刷新/恢复 ·
 AI-01 事实性（CASE 1–15 + guard）· Coach 纠正与质疑 · 跨页术语 · Design System tokens 与状态语义 ·
 DeepSeek 请求构造与非 thinking 配置 · 缺 key / 超时 / 网络 / 401 / 429 / 5xx / 非法响应 fallback ·
-上下文最小化与 profile 隔离 · 事实性问题零 provider 调用 · 幻觉草稿被 guard 拦截。
+上下文最小化与 profile 隔离 · 事实性问题零 provider 调用 · 幻觉草稿被 guard 拦截 ·
+readiness 量表上下文（`71/100` 接受、`83/100` 与 `100 minutes`/`100 bpm` 仍拒绝、`100` 不入全局白名单）。
 
 单元测试一律使用注入的 fake transport（`monkeypatch.setattr(ai_engine.requests, "post", ...)`），
 **不会真实调用 API**。真实调用只允许出现在 `scripts/deepseek_smoke.py` 的手工 QA 中。
@@ -262,13 +265,17 @@ runner 需要能访问 `https://api.deepseek.com`（当前开发机未做 live �
   云端可能解析到与本机 1.56 不同的版本，移动外壳选择器需要重新确认。移除 torch/transformers 后
   install 体积与启动时间应显著下降，但**本机没有做前后对比测量**，不要引用未测量数字。
 * **框架级视觉上限**：native slider / select 形态、次级控件尺寸、桌面端 Streamlit chrome、框架 spinner。
-* **DeepSeek live 调用未验证**：当前开发机没有 `DEEPSEEK_API_KEY`，因此 API 集成已实现但**未经真实 provider
-  调用验证**。响应延迟、真实 token 用量、`"thinking": {"type": "disabled"}` 是否被当前服务端接受、
-  以及 `deepseek-flash` alias 的可用性都尚未在真实端点上确认，需要配置 key 后用 `scripts/deepseek_smoke.py` 补验。
+* **DeepSeek live 调用已验证**（2026-09-16，20 次真实调用）：认证 · base URL · `deepseek-flash` alias ·
+  non-thinking 参数均被真实端点接受；延迟中位数 **2.9 s**（范围 2.36–3.85 s），token 约
+  812–1019 prompt / 96–195 completion；事实与纠正轮次实测 **0 次 provider 调用**。
+  仍未验证的部分只剩：依赖体积/启动时间的前后对比、带 secret 的 Streamlit Cloud 部署、真实手机行为。
 * **解释类回答**：guard 优先于文采（grounding > eloquence）。度量上更强的模型（DeepSeek）应降低回退率，
   但 guard 不会被削弱或删除；若真实 provider 的措辞频繁触发 guard，正确做法是调整 prompt，而不是放宽 guard。
 * **成本**：没有任何服务端配额或持久化计数。当前保护只有 bounded history、bounded output、context minimization
   与"事实性问题零调用"；公开 demo 长期运行仍需要额外的配额方案。
+* **已知未修的两个观察项**（已记录、当前不改行为）：`Can I swap the cable row for a machine row?` 被
+  alternative 规则拒绝（仅 1 个 live 样本）；`Should I reduce volume if my back is still sore tomorrow?`
+  因 "sore" 被路由成 PERSONAL_FACT（既有路由设计，未来需区分"假设/未来建议"与"当前个人事实"）。
 * **产品边界**：不是医疗设备，不做 fatigue / injury prediction，不提供 recovery percentage，不做诊断。
 
 # Visual Status
@@ -299,6 +306,9 @@ V1.1 已完成较完整的 visual polish（颜色角色、排版、卡片、间�
 16. DeepSeek API key 不得 hardcode / commit / 打印 / 写入 browser storage / 发往前端。
 17. 发送给 provider 的 personal context 必须是最小化摘要；不得发送完整原始历史、backup 或其他 profile 数据。
 18. guard（`validate_llm_response` / `guard_llm_response` / `guard_explanation_grounding`）不得因为模型更强而被删除或放宽。
+19. Readiness Index 量表上界（`100`）**只能紧跟在已核实的 index 数值之后出现**（`71/100`、`71 on a 0–100 scale`）。
+    禁止把它变成全局白名单：`100 minutes`、`100 weighted working sets`、`100 bpm`、`100 ms`、
+    以及 `83/100` 这类新 index 数值仍必须被拒绝。`facts_numbers()` 必须继续跳过 `index_scale`。
 
 # Do Not Resurrect Without Explicit Decision
 
@@ -322,7 +332,9 @@ Explainable Daily Training Decision；high-fidelity Streamlit functional prototy
 **DONE — V1.1 DeepSeek migration**
 解释层已从本地 Qwen 迁移到 DeepSeek API（non-thinking）。deterministic decision engine、
 Personal Fact Resolver、Grounding Guard 全部保留。详见 `docs/V1_1_DEEPSEEK_MIGRATION.md`。
-**尚未做的是 live 验证**：需要配置 `DEEPSEEK_API_KEY` 后用 `scripts/deepseek_smoke.py` 补一次真实调用 QA。
+**Live 验证已完成**：认证 / base URL / `deepseek-flash` alias / non-thinking 全部实测通过，
+延迟中位数 2.9 s。live QA 发现的 readiness 量表 guard 误报（`71/100` 被当成幻觉数字）已修复，
+EXPLANATION 接受率 0/5 → 4/5。剩余问题见 `docs/V1_1_DEEPSEEK_MIGRATION.md` 的 observed issues。
 
 **FUTURE PRODUCT STEP — V1.2 Adaptive Decision Loop（尚未实现）**
 Post-session feedback · Actual session response · Personal Response Profile · Recommendation Confidence ·
@@ -358,6 +370,6 @@ Apple Health / Garmin / WHOOP / Oura 属于后期数据入口，核心价值是*
 5. 确认最新 baseline（branch / commit / tests）。
 6. `python -m compileall .`
 7. `python -m pytest -v`
-8. 确认 test baseline（当前应为 126 passed）。
+8. 确认 test baseline（当前应为 133 passed）。
 9. **不要修改任何代码。**
 10. 先汇报理解，然后等待用户的下一条指令。

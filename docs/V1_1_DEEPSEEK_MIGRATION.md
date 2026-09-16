@@ -111,19 +111,71 @@ Unit tests never contact the provider: they inject a fake transport with
   invented duration, invented rationale;
 * provider metadata and diagnostics without exposing the key.
 
-## Unverified (honest list)
+## Live QA — verified
 
-* No live DeepSeek call has been made on this machine: there is no `DEEPSEEK_API_KEY` available.
-  Response latency, real token usage, whether the serving endpoint accepts
-  `"thinking": {"type": "disabled"}`, and the availability of the `deepseek-flash` alias are
-  therefore **not confirmed against the live API**.
+Run against the real API with a locally configured key (key never printed). Two passes plus a
+diagnostic capture, 20 provider calls in total, all to
+`https://api.deepseek.com/chat/completions`:
+
+| Item | Result |
+|---|---|
+| Authentication | PASS |
+| Base URL | PASS |
+| Model alias `deepseek-flash` | **verified** (accepted by the live endpoint) |
+| Non-thinking mode | **verified** — the endpoint accepts `"thinking": {"type": "disabled"}` |
+| Latency | median **2.9 s**, range **2.36 s – 3.85 s** |
+| Token usage | prompt 812–1019 / completion 96–195 per call |
+| Provider errors | none observed (no 401 / 429 / 5xx / timeout) |
+| Personal factual + correction turns | **0 provider calls**, measured with a counting transport |
+
+For context, the previous embedded Qwen model was measured at 3.9 s – 7.2 s per answer on CPU.
+
+## Readiness-scale guard false positive (found by live QA, fixed)
+
+**Root cause.** The product renders the readiness index as `index 71 / 100`, and DeepSeek naturally
+wrote `Readiness is AMBER (71/100)`. The generic numeric guard allow-lists only numbers present in
+the structured facts. The index *value* (71) was present, but the scale maximum (100) was not, so a
+fully grounded draft was rejected with
+`The draft introduced a number that is not in the verified facts: 100`.
+
+**Fix.** The documented scale was promoted into the facts layer
+(`readiness.index_scale = {"min": 0, "max": 100}`, single source `ai_facts.READINESS_INDEX_SCALE`) and
+the guard now removes readiness-index + scale *spans* before the allow-list scan. The span must start
+with the **verified** index value, so `71/100`, `71 / 100`, `71 out of 100` and `71 on a 0–100 scale`
+are licensed while `100 minutes`, `100 weighted working sets`, `100 bpm`, `100 ms` and a new index
+value such as `83/100` remain rejected. `facts_numbers` explicitly skips `index_scale`, so there is
+**no global `100` whitelist**. `facts_for_prompt` now emits
+`readiness index 71 on a 0–100 scale`, and the missing-index copy no longer renders
+`index not available / 100`.
+
+**Effect (same question set, live):**
+
+| Route | Before patch | After patch |
+|---|---|---|
+| EXPLANATION | 0 / 5 accepted | **4 / 5 accepted** |
+| GENERAL | 2 / 2 accepted | 2 / 2 accepted |
+
+The single remaining EXPLANATION rejection is a *different*, pre-existing rule (see below). Post-patch
+DeepSeek also stopped writing the bare `/100` ratio and followed the new prompt semantics
+("readiness is AMBER (index 71)").
+
+## Remaining observed issues (recorded, not changed)
+
+1. **Alternative / swap guard.** `Can I swap the cable row for a machine row?` was rejected by
+   `validate_llm_response` with *"The response did not distinguish the primary recommendation from an
+   alternative."* Only one live sample exists; behaviour deliberately unchanged.
+2. **Router: hypothetical advice phrased with a symptom word.** `Should I reduce volume if my back is
+   still sore tomorrow?` routes to `PERSONAL_FACT` (the word "sore" maps to local soreness), so an
+   advice question receives a factual answer about today's soreness. Pre-existing design; a future
+   fix would separate hypothetical/future advice from current personal factual queries.
+3. **Cost guard.** Still only bounded history, bounded output, context minimisation and the
+   zero-call factual path. There is no server-side quota or counter.
+
+## Still unverified
+
 * No before/after measurement of dependency size or startup time was taken.
 * Streamlit Cloud deployment with a configured secret has not been exercised.
-
-Next verification step: set the key locally and run
-`DEEPSEEK_API_KEY=... python scripts/deepseek_smoke.py` (6 explanation questions plus the factual
-regression set), then confirm the latency median/range and that factual turns still report
-`Verified data` with no provider call.
+* Real-device iOS / Android behaviour is unchanged from the earlier audits.
 
 ## Rollback
 
