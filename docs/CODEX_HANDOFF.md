@@ -155,6 +155,29 @@ Decision Trace **不是** LLM chain-of-thought，也不是 debug log；它是产
 * `How much have I trained back this week?` 及所有 personal factual / correction 轮次对 provider 的调用数必须为 **0**。
 * 模型草稿若新增未记录数字、改单位、改周期、替换 primary recommendation 或编造 rationale，必须被 guard 拦截。
 
+# Frontend Migration Status（V1.2 Phase 1，本地未 push）
+
+* 分支：`v1.2-nextjs-migration`（自 `v1.1-productization` 的 `0c42048` 创建）。**Streamlit V1.1 未被修改**，
+  仍可运行，仍是 reference implementation。
+* 新增：`backend/`（FastAPI：`main.py` · `api/routes.py` · `services/*` · `schemas/models.py`）、
+  `frontend/`（Next.js 16 App Router + React 19 + TypeScript + Tailwind 4 + shadcn/ui 风格原语）、`test_api.py`。
+* 复用且未修改：readiness / recommendation / training load / exposure / Decision Trace / safety /
+  `ai_facts` / `ai_engine`(DeepSeek) / `science_content` / `demo_data`。FastAPI 只做编排。
+* 唯一被移动的文案：`EVIDENCE_BOUNDARIES` 提取为 `science_content` 中的常量，Streamlit 页面与 API 共用同一份文本
+  （可见文案逐字不变）。
+* API：`GET /api/health` · `/api/profiles` · `/api/profile` · `/api/today` · `/api/readiness` ·
+  `/api/training/recommendation` · `/api/training/exposure` · `/api/training/history` · `/api/decision-trace` ·
+  `/api/science/references`；`POST /api/check-in` · `POST /api/coach/message`。全部返回结构化 JSON。
+* Coach 契约不变：事实性 / 纠正 / 安全轮次 **0 次 provider 调用**；只有解释类问题可调 DeepSeek；
+  key 仅存在于服务端进程（`/api/health` 只报告"是否已配置"）。
+* 测试基线：**139 → 149 passed**（新增 `test_api.py` 10 项；`test_app.py` 未改动）。
+  前端 `pnpm typecheck` / `pnpm lint` / `pnpm build` 全部 PASS。
+* 视觉 QA（Playwright + 真实 dev server + 真实 API）：390×844 与 1440×900、六个路由横向溢出 **0px**，
+  底部导航 73px 贴合安全区，Today 首屏即包含 PRIMARY CTA（未与导航重叠）。
+* 仍未 parity（仍在 Streamlit）：check-in 提交与校验 UI、完成训练日志、profile 编辑与周目标、
+  IndexedDB 持久化与导出/导入、多日趋势图、Demo 场景切换、开发者诊断面板。
+* 细节见 `docs/V1_2_FRONTEND_MIGRATION.md`。本阶段**未 push、未合 main、未打 tag**。
+
 # Science & References（V1.1 audit，2026-09-16）
 
 * 参考书目 **12 → 13 篇**（新增 Buchheit 2014 · PMID 24578692 · DOI 10.3389/fphys.2014.00073），
@@ -243,7 +266,8 @@ Decision Trace **不是** LLM chain-of-thought，也不是 debug log；它是产
 
 # Test Baseline
 
-`python -m compileall .` → PASS；`python -m pytest -v` → **139 / 139 passed**。
+`python -m compileall .` → PASS；`python -m pytest -v` → **149 / 149 passed**
+（139 项 Streamlit/engine 回归 + 10 项 FastAPI 适配层，见 `test_api.py`）。
 
 关键 regression 区域：mobile shell 间距契约与 chrome 选择器 · Today 首屏（Readiness / Training / Session Demand / CTA）·
 Train 的 primary 与 alternatives 层级 + 8 步 decision trace · 档案切换与 Demo/Local 隔离 · IndexedDB 写入/刷新/恢复 ·
@@ -388,6 +412,6 @@ Apple Health / Garmin / WHOOP / Oura 属于后期数据入口，核心价值是*
 5. 确认最新 baseline（branch / commit / tests）。
 6. `python -m compileall .`
 7. `python -m pytest -v`
-8. 确认 test baseline（当前应为 139 passed）。
+8. 确认 test baseline（当前应为 149 passed，其中 `test_api.py` 10 项）。
 9. **不要修改任何代码。**
 10. 先汇报理解，然后等待用户的下一条指令。
