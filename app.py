@@ -905,7 +905,10 @@ def render_profile(profile: dict[str, Any]) -> None:
 
 def render_science_logic() -> None:
     page_intro("SCIENCE & LOGIC", "How the system works", "How Personal Readiness turns longitudinal data into an evidence-informed daily training decision.")
-    st.info("This prototype combines published sports-science monitoring principles with transparent product heuristics. The cited literature supports the underlying concepts, but does not validate this application's exact algorithm or thresholds.")
+    st.subheader("Evidence boundaries")
+    st.write("This prototype is evidence-informed, not clinically validated. Published research informs which monitoring signals are collected and how they are interpreted: self-reported wellness, session-RPE training load, resistance-training volume and frequency, autoregulation, proximity to failure, and HRV-guided training.")
+    st.write("The application's own readiness thresholds, domain aggregation rules, Readiness Index scale, training-load comparison windows, session-demand mapping, RIR ranges and recommendation order are transparent product heuristics. They are deliberately inspectable and adjustable, and they have not been prospectively validated as clinical, performance-prediction or injury-prediction thresholds.")
+    st.write("The table further down states, for each concept, whether the literature supports the broader principle or whether the exact rule is a prototype heuristic.")
     st.subheader("System overview")
     steps = ("PERSONAL BASELINE", "DAILY CHECK-IN", "FOUR READINESS DOMAINS", "SAFETY SCREEN", "OVERALL READINESS", "TRAINING HISTORY", "WEEKLY TRAINING EXPOSURE", "GOAL + SPLIT", "LOCAL SORENESS", "SESSION DEMAND", "TODAY'S TRAINING RECOMMENDATION")
     st.markdown(" → ".join(f"**{step}**" for step in steps))
@@ -945,7 +948,7 @@ def render_science_logic() -> None:
     load_rules = READINESS_RULE_METADATA["training_load"]
     st.write(f"Training Load is calendar-based: mean daily session-RPE load across the {load_rules['recent_window']} is compared with the {load_rules['reference_window']}. All completed sessions on one date are summed. A tracked date with no completed session contributes 0 AU; a missing date remains unknown. A full comparison requires {load_rules['full_coverage_days']} covered calendar dates. A near-zero reference mean returns insufficient data instead of an unstable percentage.")
     st.write("Weekly resistance-training exposure uses actual completed working sets. Direct sets count as 1.0 and mapped secondary sets as 0.5. An unmapped exercise falls back, once per exercise, to an explicit primary muscle group or a clearly mappable session focus. This fractional model is a transparent approximation, not an exact physiological stimulus ratio.")
-    st.write("Training frequency is used to distribute volume and preserve programme structure. It is not treated as a fixed 48- or 72-hour muscle-recovery clock. Easy aerobic work and mobility are labelled lower-demand options, not guaranteed recovery accelerators.")
+    st.write("Training frequency is used to distribute volume and preserve programme structure; when weekly volume is equated, frequency shows a limited independent effect, so it is not treated as a claim that training a muscle more often is automatically better, nor as a fixed 48- or 72-hour muscle-recovery clock. Easy aerobic work and mobility are labelled lower-demand options, not guaranteed recovery accelerators.")
     st.write("For strength templates, normal-demand guidance is typically 1–3 RIR; reduced-demand guidance is 2–4 RIR with unnecessary failure avoided. These are practical product ranges, not validated readiness thresholds. For Endurance / Running-focused users, autonomic status modifies hard versus lower-intensity aerobic demand rather than choosing chest versus back.")
 
     st.subheader("Evidence vs product heuristics")
@@ -959,8 +962,14 @@ def render_science_logic() -> None:
     for item in LIMITATIONS: st.markdown(f"- {item}")
 
     st.subheader("References")
+    st.caption("Bibliographic details verified against PubMed, Europe PMC and Crossref. Each entry links to its PubMed record and, where available, to the publisher DOI.")
     for reference in REFERENCES:
-        st.markdown(f"**{reference['authors']}** ({reference['year']}). {reference['title']}. *{reference['journal']}*, {reference['citation']}. [PMID {reference['pmid']}](https://pubmed.ncbi.nlm.nih.gov/{reference['pmid']}/)")
+        links = f"[PMID {reference['pmid']}](https://pubmed.ncbi.nlm.nih.gov/{reference['pmid']}/)"
+        if reference.get("doi"):
+            links += f" · [DOI](https://doi.org/{reference['doi']})"
+        # A title may legitimately end with its own terminal punctuation.
+        title = reference["title"] if reference["title"].endswith(("?", "!", ".")) else reference["title"] + "."
+        st.markdown(f"**{reference['authors']}** ({reference['year']}). {title} *{reference['journal']}*, {reference['citation']}. {links}")
 
 
 def render_about(profile: dict[str, Any], assessment: dict[str, Any]) -> None:

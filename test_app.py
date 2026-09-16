@@ -1783,3 +1783,130 @@ def test_grounded_readiness_ratio_draft_is_accepted_end_to_end(monkeypatch) -> N
     assert provider == ai_engine.AI_PROVIDER_LABEL, notice
     assert notice is None
     assert answer == draft
+
+
+# --------------------------------------------------------------------------- #
+# PHASE 6 — Science & references audit
+# --------------------------------------------------------------------------- #
+
+
+def test_reference_bibliography_is_complete_and_consistent() -> None:
+    from science_content import REFERENCES
+
+    assert len(REFERENCES) == 13
+    seen: set[str] = set()
+    for reference in REFERENCES:
+        for field in ("authors", "title", "journal", "citation", "pmid", "doi"):
+            assert reference.get(field), f"PMID {reference.get('pmid')} is missing {field}"
+        assert " et al" not in reference["authors"], reference["pmid"]     # one author style only
+        assert not reference["title"].endswith(".")                         # no duplicated terminal punctuation
+        assert reference["doi"].startswith("10."), reference["pmid"]
+        assert str(reference["year"]).isdigit(), reference["pmid"]
+        assert reference["pmid"] not in seen
+        seen.add(reference["pmid"])
+
+
+def test_reference_corrections_from_the_audit_are_present() -> None:
+    from science_content import REFERENCES
+
+    by_pmid = {reference["pmid"]: reference for reference in REFERENCES}
+    # Schoenfeld 2019 carried a truncated title; the official full title is now used
+    assert by_pmid["30558493"]["title"] == (
+        "How many times per week should a muscle be trained to maximize muscle hypertrophy? "
+        "A systematic review and meta-analysis of studies examining the effects of resistance training frequency")
+    # Buchheit 2014 was added, with the verified Frontiers volume/article and DOI
+    buchheit = by_pmid["24578692"]
+    assert buchheit["authors"] == "Buchheit M"
+    assert buchheit["journal"] == "Frontiers in Physiology"
+    assert buchheit["year"] == 2014 and buchheit["citation"] == "5:73"
+    assert buchheit["doi"] == "10.3389/fphys.2014.00073"
+    # a longer author list replaced a truncated "et al." entry
+    assert by_pmid["32813181"]["authors"].startswith("Greig L, Stephens Hemingway BH")
+    assert by_pmid["38970765"]["authors"].startswith("Robinson ZP, Pelland JC")
+
+
+def test_reference_pmids_and_dois_are_paired() -> None:
+    from science_content import REFERENCES
+
+    paired = {reference["pmid"]: reference["doi"] for reference in REFERENCES}
+    assert paired == {
+        "26423706": "10.1136/bjsports-2015-094758",
+        "28463642": "10.1123/IJSPP.2017-0208",
+        "29163016": "10.3389/fnins.2017.00612",
+        "27433992": "10.1080/02640414.2016.1210197",
+        "30558493": "10.1080/02640414.2018.1555906",
+        "41343037": "10.1007/s40279-025-02344-w",
+        "32813181": "10.1007/s40279-020-01330-8",
+        "33776802": "10.3389/fphys.2021.651112",
+        "36334240": "10.1007/s40279-022-01784-y",
+        "38970765": "10.1007/s40279-024-02069-2",
+        "34489178": "10.1016/j.jsams.2021.04.012",
+        "34639599": "10.3390/ijerph181910299",
+        "24578692": "10.3389/fphys.2014.00073",
+    }
+
+
+def test_science_page_renders_evidence_boundaries_and_verified_references() -> None:
+    _, html, headings, captions = _page_render("Science & Logic")
+    assert "Evidence boundaries" in headings
+    assert "References" in headings
+    body = "\n".join([html, *captions])
+    assert "not clinically validated" in body
+    assert "have not been prospectively validated" in body
+    assert "Buchheit M" in body                       # the added reference renders
+    assert "pubmed.ncbi.nlm.nih.gov/24578692" in body
+    assert "doi.org/10.3389/fphys.2014.00073" in body
+    assert "Rome?." not in body and "?." not in body and ".." not in body   # no doubled punctuation
+    # the corrected full title is what the page shows, not the truncated version
+    assert "of studies examining the effects of resistance training frequency" in body
+
+
+_NEGATION_MARKERS = ("not ", "never", "no ", "cannot", "without", "does not")
+
+
+def _assert_never_asserted(phrase: str, text: str, where: str) -> None:
+    """The phrase may only appear inside a negating sentence."""
+    lowered, needle = text.casefold(), phrase.casefold()
+    start = lowered.find(needle)
+    while start != -1:
+        window = lowered[max(0, start - 48):start]
+        assert any(marker in window for marker in _NEGATION_MARKERS), f"{where} asserts '{phrase}'"
+        start = lowered.find(needle, start + 1)
+
+
+def test_science_copy_never_overclaims() -> None:
+    from science_content import EVIDENCE_MAP, LIMITATIONS
+
+    source = Path("app.py").read_text(encoding="utf-8")
+    science = source.split("def render_science_logic", 1)[1].split("def render_about", 1)[0]
+    corpus = {
+        "Science & Logic page": science,
+        "limitations": " ".join(LIMITATIONS),
+        "evidence map": " ".join(f"{item['concept']} {item['evidence']} {item['implementation']}"
+                                 for item in EVIDENCE_MAP.values()),
+        "README": Path("README.md").read_text(encoding="utf-8"),
+    }
+    banned = ("validated threshold", "scientifically proven", "proven cutoff", "predicts injury",
+              "prevents injury", "injury risk is low", "fatigue probability", "100% recovered",
+              "fully recovered", "safe to train", "clinically validated prescription",
+              "optimal weekly sets", "HRV determines", "guaranteed recovery", "medical device")
+    for phrase in banned:
+        for where, text in corpus.items():
+            _assert_never_asserted(phrase, text, where)
+    # the guard itself must not be vacuous
+    with pytest.raises(AssertionError):
+        _assert_never_asserted("predicts injury", "This app predicts injury for you.", "self-check")
+
+
+def test_every_evidence_row_declares_its_support_level() -> None:
+    from science_content import EVIDENCE_LABELS, EVIDENCE_MAP, REFERENCES
+
+    pmids = {reference["pmid"] for reference in REFERENCES}
+    for key, item in EVIDENCE_MAP.items():
+        assert item["label"] in set(EVIDENCE_LABELS.values()), key
+        assert item["concept"] and item["evidence"] and item["implementation"], key
+        for pmid in item["pmids"]:
+            assert pmid in pmids, f"{key} cites PMID {pmid}, which is not in REFERENCES"
+    # rule-level rows stay explicitly heuristic
+    for key in ("hrv_thresholds", "overall_rule", "sleep_recovery", "fractional_sets", "local_soreness"):
+        assert EVIDENCE_MAP[key]["label"] == EVIDENCE_LABELS["heuristic"], key
