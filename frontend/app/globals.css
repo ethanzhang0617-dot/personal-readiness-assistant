@@ -1,0 +1,68 @@
+@import "tailwindcss";
+
+/*
+ * Design tokens. Values are carried over from the V1.1 Streamlit design system
+ * (styles.DESIGN_TOKENS) so the migration keeps one visual language:
+ * green = positive readiness, amber = caution, red = stop/destructive only,
+ * charcoal = ordinary primary action.
+ */
+@theme {
+  --color-background: #f7f7f4;
+  --color-surface: #ffffff;
+  --color-surface-muted: #fbfaf7;
+  --color-foreground: #16181a;
+  --color-muted: #6b6f76;
+  --color-muted-soft: #f1f1ee;
+  --color-subtle: #eeeeea;
+  --color-primary: #1a1c1e;
+  --color-primary-foreground: #f8f7f4;
+
+  --radius-card: 1rem;
+  --radius-control: 0.75rem;
+
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+:root {
+  --status-green: #1f7a4d;
+  --status-green-soft: #eaf5ee;
+  --status-green-line: #cfe7d8;
+  --status-amber: #a05f00;
+  --status-amber-soft: #fdf3e3;
+  --status-amber-line: #f0dcb4;
+  --status-red: #b3261e;
+  --status-red-soft: #fdecea;
+  --status-red-line: #f3cfcb;
+  color-scheme: light;
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    background-color: var(--color-background);
+  }
+
+  body {
+    @apply bg-background font-sans text-foreground antialiased;
+    /* Never allow a stray wide element to create a horizontal scrollbar. */
+    overflow-x: hidden;
+  }
+
+  ::selection {
+    background-color: var(--color-primary);
+    color: var(--color-primary-foreground);
+  }
+}
+
+@utility numeric-hero {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.03em;
+  line-height: 0.95;
+}
+
+@utility eyebrow {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
