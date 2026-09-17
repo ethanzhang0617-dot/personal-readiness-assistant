@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { PageHeader } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
+import { RichText } from "@/components/ui/rich-text";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useUserState } from "@/lib/state-provider";
 import type { CoachKind } from "@/types/api";
@@ -183,8 +184,24 @@ export function CoachView() {
                 <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-muted">
                   {provenance?.label ?? "Answer"}
                 </p>
-                <p className="whitespace-pre-wrap text-[0.9rem] leading-relaxed">{message.content}</p>
-                {message.notice ? (
+                <RichText text={message.content} />
+                {message.kind === "ai_explanation" ? (
+                  <details className="group">
+                    <summary className="flex min-h-9 cursor-pointer list-none items-center gap-1 text-[0.72rem] font-medium text-muted">
+                      See reasoning →
+                      <span className="transition-transform group-open:rotate-90" aria-hidden>
+                        ›
+                      </span>
+                    </summary>
+                    <p className="mt-1.5 text-[0.72rem] leading-relaxed text-muted">
+                      This wording is generated from your verified structured facts. The recommendation and every
+                      personal number come from the deterministic decision system, not from the model.
+                    </p>
+                    {message.notice ? (
+                      <p className="mt-1 text-[0.72rem] leading-relaxed text-muted">{message.notice}</p>
+                    ) : null}
+                  </details>
+                ) : message.notice ? (
                   <p className="flex items-start gap-1.5 text-[0.7rem] leading-relaxed text-muted">
                     <CircleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
                     {message.notice}
