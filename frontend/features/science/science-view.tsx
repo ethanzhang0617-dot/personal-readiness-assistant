@@ -4,7 +4,6 @@ import { ArrowLeft, ExternalLink } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
 import { StatePanel } from "@/components/state-panel";
 import { Badge } from "@/components/ui/badge";
-import { Card } from "@/components/ui/card";
 import { Section } from "@/components/ui/section";
 import { api } from "@/lib/api";
 
@@ -41,7 +40,6 @@ export async function ScienceView() {
       </Link>
 
       <PageHeader
-        eyebrow="Science & Logic"
         title="Evidence and boundaries"
         description="What the literature supports, and where this product uses its own heuristics."
       />
@@ -51,7 +49,7 @@ export async function ScienceView() {
           <a
             key={item.href}
             href={item.href}
-            className="flex min-h-11 shrink-0 items-center rounded-full border border-subtle bg-surface px-3.5 text-[0.78rem] font-medium text-muted transition-colors hover:text-foreground md:min-h-9"
+            className="flex min-h-11 shrink-0 items-center rounded-full bg-surface-muted px-3.5 text-[0.78rem] font-medium text-muted transition-colors hover:text-foreground md:min-h-9"
           >
             {item.label}
           </a>
@@ -59,19 +57,19 @@ export async function ScienceView() {
       </nav>
 
       <section id="boundaries" className="scroll-mt-20">
-        <Card className="space-y-3 p-5">
+        <div className="surface-flat space-y-3 p-5">
           <p className="eyebrow">Evidence boundaries</p>
           {boundaries.map((paragraph) => (
             <p key={paragraph} className="text-[0.85rem] leading-relaxed">
               {paragraph}
             </p>
           ))}
-        </Card>
+        </div>
       </section>
 
       <section id="concepts" className="scroll-mt-20">
-        <Section eyebrow="Evidence" title="Concept by concept" divided={false}>
-          <ul className="divide-y divide-subtle border-y border-subtle">
+        <Section title="Concept by concept" divided={false}>
+          <ul className="hairline-list">
             {evidenceMap.map((row) => (
               <li key={row.key} className="space-y-1.5 py-4">
                 <div className="flex items-start justify-between gap-3">
@@ -111,7 +109,7 @@ export async function ScienceView() {
 
       {logic.ok ? (
         <section id="rules" className="scroll-mt-20 space-y-6">
-          <Section eyebrow="System" title="How the decision is built">
+          <Section title="How the decision is built">
             <p className="text-[0.8rem] leading-relaxed text-muted">
               {logic.data.system_steps.map((step) => step.toLowerCase()).join(" → ")}
             </p>
@@ -127,7 +125,7 @@ export async function ScienceView() {
             </dl>
           </Section>
 
-          <Section eyebrow="Thresholds" title="Transparent operating bands">
+          <Section title="Transparent operating bands">
             <div className="overflow-x-auto">
               <table className="w-full text-left text-[0.74rem]">
                 <thead className="text-muted">
@@ -140,7 +138,7 @@ export async function ScienceView() {
                 </thead>
                 <tbody>
                   {logic.data.thresholds.map((row) => (
-                    <tr key={row.key} className="border-t border-subtle">
+                    <tr key={row.key} className="divider">
                       <td className="py-2 pr-2">{row.label}</td>
                       <td className="py-2 pr-2 tabular-nums">{row.green}</td>
                       <td className="py-2 pr-2 tabular-nums">{row.amber}</td>
@@ -153,7 +151,7 @@ export async function ScienceView() {
             <p className="mt-2 text-[0.7rem] text-muted">{logic.data.threshold_caveat}</p>
           </Section>
 
-          <Section eyebrow="Aggregation" title="Overall readiness logic">
+          <Section title="Overall readiness logic">
             <ul className="space-y-1.5">
               {logic.data.overall_rule.map((rule) => (
                 <li key={rule} className="text-[0.78rem] leading-relaxed text-muted">
@@ -165,7 +163,7 @@ export async function ScienceView() {
             <p className="mt-2 text-[0.78rem] leading-relaxed text-muted">{logic.data.safety_override}</p>
           </Section>
 
-          <Section eyebrow="Selection" title="How today's training is chosen">
+          <Section title="How today's training is chosen">
             <ol className="space-y-1.5">
               {logic.data.decision_order.map((step, index) => (
                 <li key={step} className="text-[0.78rem] leading-relaxed">
@@ -186,7 +184,7 @@ export async function ScienceView() {
             <p className="mt-2 text-[0.78rem] leading-relaxed text-muted">{logic.data.rir_guidance}</p>
           </Section>
 
-          <Section eyebrow="Illustration" title="Example decision">
+          <Section title="Example decision">
             <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-[0.78rem]">
               {Object.entries(logic.data.example_decision).map(([key, value]) => (
                 <div key={key} className="flex justify-between gap-2">
@@ -202,7 +200,7 @@ export async function ScienceView() {
         <StatePanel tone="error" title="Rule detail unavailable" body={logic.error} />
       )}
 
-      <Section eyebrow="Limits" title="What this system does not claim">
+      <Section title="What this system does not claim">
         <ul className="space-y-1.5">
           {limitations.map((item) => (
             <li key={item} className="text-[0.78rem] leading-relaxed text-muted">
@@ -214,13 +212,12 @@ export async function ScienceView() {
 
       <section id="references" className="scroll-mt-20">
         <Section
-          eyebrow="Bibliography"
           title="References"
           description={verification}
           action={<span className="text-[0.72rem] text-muted">{references.length} verified</span>}
           divided={false}
         >
-          <ol className="divide-y divide-subtle border-y border-subtle">
+          <ol className="hairline-list">
             {references.map((reference) => (
               <li key={reference.pmid} className="py-4">
                 <p className="text-[0.78rem] font-semibold leading-snug">

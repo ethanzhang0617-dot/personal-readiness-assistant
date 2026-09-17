@@ -2,7 +2,6 @@ import Link from "next/link";
 import { ArrowLeft, Info } from "lucide-react";
 
 import { PageHeader } from "@/components/page-header";
-import { Card } from "@/components/ui/card";
 import { Section } from "@/components/ui/section";
 
 const FLOW = [
@@ -26,12 +25,11 @@ export function AboutView() {
       </Link>
 
       <PageHeader
-        eyebrow="About"
         title="Personal Readiness Assistant"
         description="A readiness-aware strength-training decision assistant."
       />
 
-      <Card className="space-y-3 p-5">
+      <div className="surface-flat space-y-3 p-5">
         <p className="text-[0.9rem] leading-relaxed">
           It answers how ready you are today, what to train, how hard, and why — using your personal baseline,
           completed training and programme context.
@@ -41,9 +39,9 @@ export function AboutView() {
           windows, RIR ranges and the recommendation order are documented product heuristics. They have not been
           prospectively validated as clinical, performance-prediction or injury-prediction thresholds.
         </p>
-      </Card>
+      </div>
 
-      <Section eyebrow="Product flow" title="Six steps">
+      <Section title="Six steps">
         <ol className="grid gap-3 sm:grid-cols-2">
           {FLOW.map((item) => (
             <li key={item.step} className="flex gap-3">
@@ -57,7 +55,7 @@ export function AboutView() {
         </ol>
       </Section>
 
-      <Section eyebrow="Architecture" title="How this build is put together">
+      <Section title="How this build is put together">
         <dl className="grid gap-3 text-[0.78rem] sm:grid-cols-2">
           <div>
             <dt className="font-medium">Frontend</dt>
@@ -80,7 +78,7 @@ export function AboutView() {
         </dl>
       </Section>
 
-      <Section eyebrow="Scope" title="Safety and limits">
+      <Section title="Safety and limits">
         <ul className="space-y-1.5 text-[0.78rem] leading-relaxed text-muted">
           <li>Not a medical device, diagnosis, fatigue prediction or injury prediction tool.</li>
           <li>Not clinically validated, and not a substitute for a coach or clinician.</li>

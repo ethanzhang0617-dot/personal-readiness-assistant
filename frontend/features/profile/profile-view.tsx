@@ -8,6 +8,7 @@ import { PageHeader } from "@/components/page-header";
 import { ProfileSwitcher } from "@/components/profile-switcher";
 import { ResponseDemoControl } from "@/components/response-demo-control";
 import { ScenarioSwitcher } from "@/components/scenario-switcher";
+import { ThemeControl } from "@/components/theme-control";
 import { StatePanel } from "@/components/state-panel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -36,7 +37,7 @@ function SelectField({
         onChange={(event) => onChange(event.target.value)}
         /* A fixed height rather than min-height: WebKit ignores min-height on a
            native select, which leaves Safari with a 23px control. */
-        className="mt-1.5 h-11 w-full rounded-[var(--radius-control)] border border-subtle bg-surface px-3 text-sm md:h-10"
+        className="mt-1.5 h-11 w-full rounded-[var(--radius-control)] bg-surface-muted px-3 text-sm md:h-10"
       >
         {(options ?? []).map((option) => (
           <option key={option} value={option}>
@@ -76,7 +77,7 @@ function NumberField({
           step={step}
           value={value}
           onChange={(event) => onChange(Number(event.target.value))}
-          className="min-h-11 w-full rounded-[var(--radius-control)] border border-subtle bg-surface px-3 pr-14 text-sm tabular-nums outline-none"
+          className="min-h-11 w-full rounded-[var(--radius-control)] bg-surface-muted px-3 pr-14 text-sm tabular-nums outline-none"
         />
         {suffix ? (
           <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[0.75rem] text-muted">
@@ -150,14 +151,14 @@ export function ProfileView() {
       {message ? <StatePanel tone="info" title="Saved" body={message} /> : null}
       {error ? <StatePanel tone="error" title="Not saved" body={error} /> : null}
 
-      <Section eyebrow="Training" title="Goal and programme" divided={false}>
+      <Section title="Training goal and programme" divided={false}>
         <div className="grid gap-3 md:grid-cols-2">
           <label className="block md:col-span-2">
             <span className="text-[0.75rem] text-muted">Name</span>
             <input
               value={String(form.name ?? "")}
               onChange={(event) => set("name", event.target.value)}
-              className="mt-1.5 min-h-11 w-full rounded-[var(--radius-control)] border border-subtle bg-surface px-3 text-sm"
+              className="mt-1.5 min-h-11 w-full rounded-[var(--radius-control)] bg-surface-muted px-3 text-sm"
             />
           </label>
           <SelectField
@@ -187,7 +188,7 @@ export function ProfileView() {
         </div>
       </Section>
 
-      <Section eyebrow="Readiness" title="Baseline inputs">
+      <Section title="Personal baseline">
         <div className="grid gap-3 md:grid-cols-2">
           <NumberField
             label="Personal sleep need"
@@ -220,22 +221,22 @@ export function ProfileView() {
           />
         </div>
 
-        <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-2 border-t border-subtle pt-3 text-[0.75rem] md:grid-cols-4">
+        <dl className="mt-5 grid grid-cols-2 gap-x-4 gap-y-3 md:grid-cols-4">
           <div>
-            <dt className="text-muted">Valid observations</dt>
-            <dd className="font-medium tabular-nums">{String(baseline.valid_days ?? "—")}</dd>
+            <dt className="text-[0.72rem] text-muted">Valid observations</dt>
+            <dd className="mt-0.5 text-[0.85rem] font-medium tabular-nums">{String(baseline.valid_days ?? "—")}</dd>
           </div>
           <div>
-            <dt className="text-muted">Baseline window</dt>
-            <dd className="font-medium tabular-nums">{String(baseline.window_days ?? "—")} days</dd>
+            <dt className="text-[0.72rem] text-muted">Baseline window</dt>
+            <dd className="mt-0.5 text-[0.85rem] font-medium tabular-nums">{String(baseline.window_days ?? "—")} days</dd>
           </div>
           <div>
-            <dt className="text-muted">Confidence</dt>
-            <dd className="font-medium">{String(baseline.confidence ?? "—")}</dd>
+            <dt className="text-[0.72rem] text-muted">Confidence</dt>
+            <dd className="mt-0.5 text-[0.85rem] font-medium">{String(baseline.confidence ?? "—")}</dd>
           </div>
           <div>
-            <dt className="text-muted">LnRMSSD mean</dt>
-            <dd className="font-medium tabular-nums">
+            <dt className="text-[0.72rem] text-muted">LnRMSSD mean</dt>
+            <dd className="mt-0.5 text-[0.85rem] font-medium tabular-nums">
               {baseline.lnrmssd_mean ? formatNumber(baseline.lnrmssd_mean as number, 2) : "—"}
             </dd>
           </div>
@@ -247,7 +248,6 @@ export function ProfileView() {
       </Section>
 
       <Section
-        eyebrow="Planning"
         title="Weekly set targets"
         description="Optional planning targets. Seven-day exposure compares against these; they are not universal optimal-volume claims."
       >
@@ -264,7 +264,7 @@ export function ProfileView() {
                 onChange={(event) =>
                   setTargetDraft((current) => ({ ...current, [group]: Number(event.target.value) || 0 }))
                 }
-                className="min-h-11 w-20 rounded-[var(--radius-control)] border border-subtle bg-surface px-2 text-right text-[0.8rem] tabular-nums md:min-h-10"
+                className="min-h-11 w-20 rounded-[var(--radius-control)] bg-surface-muted px-2 text-right text-[0.8rem] tabular-nums md:min-h-10"
               />
             </label>
           ))}
@@ -275,8 +275,12 @@ export function ProfileView() {
         {busy ? "Saving…" : "Save profile"}
       </Button>
 
+      <Section title="Appearance">
+        <ThemeControl />
+      </Section>
+
       {profile.is_demo ? (
-        <Section eyebrow="Demo controls" title="Scenarios and profiles" description="Portfolio demo controls — not part of the daily workflow.">
+        <Section title="Demo controls" description="Portfolio demo controls — not part of the daily workflow.">
           <div className="space-y-3">
             <ScenarioSwitcher />
             <ProfileSwitcher />
@@ -286,15 +290,15 @@ export function ProfileView() {
         </Section>
       ) : null}
 
-      <Section eyebrow="Information" title="Science, data and about">
-        <ul className="divide-y divide-subtle border-y border-subtle">
+      <Section title="Science, data and about">
+        <ul>
           {[
             { href: "/profile/science", label: "Science & Logic", hint: "Evidence boundaries, heuristics and 13 verified references" },
             { href: "/profile/data", label: "Data, privacy and backup", hint: "What is stored, where it goes, export and import" },
             { href: "/profile/about", label: "About this prototype", hint: "What the product is and what it does not claim" },
           ].map((item) => (
             <li key={item.href}>
-              <Link href={item.href} className="flex min-h-14 items-center justify-between gap-3 py-2">
+              <Link href={item.href} className="hairline flex min-h-14 items-center justify-between gap-3 py-2 last:border-b-0">
                 <span className="min-w-0">
                   <span className="block text-[0.86rem] font-medium">{item.label}</span>
                   <span className="block text-[0.7rem] text-muted">{item.hint}</span>

@@ -7,7 +7,6 @@ import { useEffect, useRef, useState } from "react";
 import { PageHeader } from "@/components/page-header";
 import { StatePanel } from "@/components/state-panel";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { Section } from "@/components/ui/section";
 import { api } from "@/lib/api";
 import { useUserState } from "@/lib/state-provider";
@@ -112,7 +111,6 @@ export function DataView() {
       </Link>
 
       <PageHeader
-        eyebrow="Data & privacy"
         title="Your data in this browser"
         description="What is stored, where it goes, and what this prototype does not do."
       />
@@ -130,7 +128,7 @@ export function DataView() {
         }
       />
 
-      <Section eyebrow="Sources" title="What the product reads" divided={false}>
+      <Section title="What the product reads" divided={false}>
         <ul className="space-y-2 text-[0.82rem]">
           <li className="flex items-start gap-2">
             <CircleCheck className="mt-0.5 h-4 w-4 shrink-0 text-muted" aria-hidden />
@@ -160,7 +158,7 @@ export function DataView() {
         </p>
       </Section>
 
-      <Section eyebrow="AI" title="What leaves this device">
+      <Section title="What leaves this device">
         <p className="text-[0.82rem] leading-relaxed text-muted">
           Personal factual questions are answered from your recorded data with no provider call. When you ask an
           explanation question, a summarised context and your recent Coach messages are sent to the configured AI
@@ -174,7 +172,6 @@ export function DataView() {
       </Section>
 
       <Section
-        eyebrow="Backup"
         title="Export, import and clear"
         description="Local data does not follow you to another browser or device. Export a backup if the history matters."
       >
@@ -195,7 +192,7 @@ export function DataView() {
         />
 
         {candidate ? (
-          <Card className="mt-3 space-y-3 p-4">
+          <div className="surface-flat mt-3 space-y-3 p-4">
             <div>
               <p className="text-[0.82rem] font-semibold">{candidate.fileName}</p>
               <p className="mt-0.5 text-[0.72rem] text-muted">
@@ -216,7 +213,7 @@ export function DataView() {
                 Replace local data
               </Button>
             </div>
-          </Card>
+          </div>
         ) : null}
 
         <p className="mt-3 text-[0.7rem] text-muted">

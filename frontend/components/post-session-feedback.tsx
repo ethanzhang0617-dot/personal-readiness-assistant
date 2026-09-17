@@ -98,7 +98,7 @@ export function PostSessionFeedback({
             maxLength={280}
             onChange={(event) => setNote(event.target.value)}
             placeholder="Anything worth remembering about this session"
-            className="mt-1.5 min-h-11 w-full rounded-[var(--radius-control)] border border-subtle bg-surface px-3 text-sm"
+            className="mt-1.5 min-h-11 w-full rounded-[var(--radius-control)] bg-surface-muted px-3 text-sm"
           />
         </label>
       </div>

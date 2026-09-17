@@ -32,7 +32,7 @@ export function ResponseDemoControl() {
               setMessage(result.ok ? `Loaded: ${RESPONSE_DEMO_LABELS[caseName]}` : result.error ?? null);
             }}
             className={cn(
-              "min-h-11 rounded-full border border-subtle bg-surface px-3.5 text-[0.76rem] font-medium",
+              "min-h-11 rounded-full bg-surface-muted px-3.5 text-[0.76rem] font-medium",
               "text-muted transition-colors hover:text-foreground md:min-h-9",
             )}
           >

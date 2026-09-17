@@ -187,7 +187,7 @@ export function CheckInView() {
         onChange={(event) => setField(key, event.target.value)}
         aria-label={label}
         className={cn(
-          "mt-1.5 min-h-12 w-full rounded-[var(--radius-control)] border bg-surface px-3 text-[0.95rem] font-medium tabular-nums",
+          "mt-1.5 min-h-12 w-full rounded-[var(--radius-control)] border bg-surface-muted px-3 text-[0.95rem] font-medium tabular-nums",
           errors[key] ? "border-[var(--status-red-line)]" : "border-subtle",
         )}
       />
@@ -198,7 +198,6 @@ export function CheckInView() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow="Check-in"
         title="Morning check-in"
         description="Six inputs, about a minute. Readiness recalculates from your own baseline."
       />
@@ -223,7 +222,7 @@ export function CheckInView() {
         </p>
       ) : null}
 
-      <Section eyebrow="Recovery" title="Overnight signals" divided={false}>
+      <Section title="Overnight signals" divided={false}>
         <div className="grid grid-cols-2 gap-3">
           {numberField("rmssd_ms", "HRV (RMSSD)", "ms")}
           {numberField("resting_hr_bpm", "Resting HR", "bpm", "1")}
@@ -231,7 +230,7 @@ export function CheckInView() {
         </div>
       </Section>
 
-      <Section eyebrow="Wellness" title="How you feel">
+      <Section title="How you feel">
         <div className="space-y-3">
           {SCALE_FIELDS.map((field) => (
             <div key={field.key}>
@@ -255,7 +254,6 @@ export function CheckInView() {
       </Section>
 
       <Section
-        eyebrow="Context"
         title="Local soreness"
         description="Optional. 0 = none · 5 = severe. Soreness is one contextual signal, not a recovery measurement."
       >
@@ -269,7 +267,7 @@ export function CheckInView() {
                 onChange={(event) =>
                   setField("local_soreness", { ...form.local_soreness, [muscle]: Number(event.target.value) })
                 }
-                className="h-11 w-16 rounded-[var(--radius-control)] border border-subtle bg-surface px-2 text-[0.8rem] md:h-9"
+                className="h-11 w-16 rounded-[var(--radius-control)] bg-surface-muted px-2 text-[0.8rem] md:h-9"
               >
                 {[0, 1, 2, 3, 4, 5].map((value) => (
                   <option key={value} value={value}>
@@ -283,7 +281,6 @@ export function CheckInView() {
       </Section>
 
       <Section
-        eyebrow="Safety"
         title="Safety check"
         description="Select anything that applies. A flag routes the product to STOP instead of a normal recommendation — conservative product routing, not a diagnosis."
       >
@@ -311,7 +308,7 @@ export function CheckInView() {
 
       {/* A full-width action bar rather than a floating card, so the form never
           looks like it is being covered by another box. */}
-      <div className="sticky bottom-[calc(env(safe-area-inset-bottom)+4.5rem)] z-20 -mx-4 border-t border-subtle bg-background/95 px-4 py-2.5 backdrop-blur md:static md:mx-0 md:border-0 md:bg-transparent md:px-0 md:backdrop-blur-none">
+      <div className="sticky bottom-[calc(env(safe-area-inset-bottom)+4.5rem)] z-20 -mx-4 divider bg-background/95 px-4 py-2.5 backdrop-blur md:static md:mx-0 md:border-0 md:bg-transparent md:px-0 md:backdrop-blur-none">
         <Button size="lg" variant="primary" className="w-full" disabled={busy} onClick={() => void submit()}>
           {busy ? "Recalculating…" : "Save check-in"}
         </Button>
