@@ -16,10 +16,8 @@ export function AppShell({ children }: { children: ReactNode }) {
           <span className="text-[0.78rem] font-semibold tracking-tight text-foreground md:hidden">
             Personal Readiness Assistant
           </span>
-          <span className="hidden text-[0.72rem] text-muted md:inline">
-            Deterministic engines · DeepSeek explanations · Product heuristics disclosed
-          </span>
-          <span className="text-[0.72rem] font-medium text-muted md:hidden">V1.2</span>
+          <span className="hidden md:inline" aria-hidden />
+          <span className="text-[0.68rem] font-medium tracking-wide text-muted">V1.3</span>
         </header>
         <main className="mx-auto w-full max-w-[46rem] flex-1 px-4 pb-[calc(env(safe-area-inset-bottom)+5.75rem)] pt-4 md:max-w-[58rem] md:px-8 md:pb-16 md:pt-10">
           {children}

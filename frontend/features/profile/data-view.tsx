@@ -239,8 +239,8 @@ export function DataView() {
 
       <p className="flex items-start gap-2 text-[0.7rem] leading-relaxed text-muted">
         <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
-        This is the Next.js client of the V1.2 migration. The Streamlit V1.1 app remains the reference implementation
-        during the migration.
+        Your check-ins, logged sessions, profile edits and Coach history stay in this browser. Nothing is written to a
+        server database.
       </p>
     </div>
   );

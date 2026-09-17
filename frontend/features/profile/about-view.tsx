@@ -78,9 +78,6 @@ export function AboutView() {
             </dd>
           </div>
         </dl>
-        <p className="mt-3 text-[0.7rem] text-muted">
-          The original Streamlit V1.1 build remains available as the reference implementation during the migration.
-        </p>
       </Section>
 
       <Section eyebrow="Scope" title="Safety and limits">

@@ -37,10 +37,7 @@ export function SideNav() {
           );
         })}
       </nav>
-      <div className="mt-auto space-y-1 p-4 text-[0.7rem] leading-relaxed text-muted">
-        <p>V1.2 migration preview.</p>
-        <p>The Streamlit V1.1 app remains the reference implementation.</p>
-      </div>
+      <p className="mt-auto p-5 text-[0.68rem] font-medium tracking-wide text-muted">V1.3</p>
     </aside>
   );
 }
