@@ -1,42 +1,23 @@
 "use client";
 
-import { ArrowUp, CircleAlert, ShieldCheck, Sparkles } from "lucide-react";
+import Link from "next/link";
+import { ArrowUp, ChevronRight, CircleAlert, ShieldCheck, Sparkles } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { PageHeader } from "@/components/page-header";
-import { StatusBadge } from "@/components/status-badge";
 import { RichText } from "@/components/ui/rich-text";
 import { Skeleton } from "@/components/ui/skeleton";
+import { COACH_MENUS, PRIMARY_QUESTIONS } from "@/lib/coach-questions";
 import { useUserState } from "@/lib/state-provider";
 import type { CoachKind } from "@/types/api";
 import { cn } from "@/lib/utils";
 
-const STARTERS = [
-  "Why this workout?",
-  "Explain my readiness.",
-  "Can I train harder today?",
-  // Phrasing matters: the deterministic router resolves this exact wording to
-  // weekly exposure. The router is a protected contract, so the starter adapts.
-  "How much have I trained back this week?",
-];
-
-// Personal Response starters resolve deterministically (zero provider calls).
-// The wording is deliberately the phrasing the deterministic router matches.
-const RESPONSE_STARTERS = [
-  "How do I usually respond to high-demand sessions?",
-  "How confident is today's personalized recommendation?",
-  "How many sessions support this adjustment?",
-  "Has Personal Response changed my training before?",
-  "Why didn't you increase today's training if I usually recover well?",
-];
-
-// In-session calibration starters. These resolve deterministically too, and they
-// only answer from recorded checkpoints — never from the explanation provider.
-const CALIBRATION_STARTERS = [
-  "What is my calibration today?",
-  "Have I often needed to ease off recently?",
-  "What RIR did I just record?",
-];
+// Coach home: conversational, not a FAQ directory.
+//
+// Four high-frequency questions and three compact links to the Coach-internal
+// menus. The full question library never renders here, and the answers below are
+// exactly the same answers the product produced before — only their entry points
+// moved.
 
 // Provenance is communicated quietly: a small label above the answer, never a
 // developer badge. Verified answers are the deterministic layer; everything else
@@ -48,8 +29,58 @@ const PROVENANCE: Record<CoachKind, { label: string; tone: "verified" | "ai" | "
   safety: { label: "Safety guidance", tone: "safety" },
 };
 
+function QuestionList({
+  onAsk,
+  disabled,
+  className,
+}: {
+  onAsk: (question: string) => void;
+  disabled: boolean;
+  className?: string;
+}) {
+  return (
+    <ul className={cn("border-y border-subtle", className)}>
+      {PRIMARY_QUESTIONS.map((question) => (
+        <li key={question}>
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={() => onAsk(question)}
+            className="flex min-h-12 w-full items-center justify-between gap-3 border-b border-subtle py-3 text-left text-[0.88rem] leading-snug transition-colors last:border-b-0 hover:text-muted disabled:opacity-50"
+          >
+            {question}
+            <span aria-hidden className="shrink-0 text-muted">
+              →
+            </span>
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function TopicLinks({ className }: { className?: string }) {
+  return (
+    <nav aria-label="Coach topics" className={cn("border-y border-subtle", className)}>
+      {COACH_MENUS.map((menu) => (
+        <Link
+          key={menu.key}
+          href={menu.href}
+          className="flex min-h-12 items-center justify-between gap-3 border-b border-subtle py-3 text-[0.88rem] transition-colors last:border-b-0 hover:text-muted"
+        >
+          <span className="font-medium">{menu.title}</span>
+          <span className="flex shrink-0 items-center gap-1 text-[0.72rem] text-muted">
+            {menu.questions.length} questions
+            <ChevronRight className="h-4 w-4" aria-hidden />
+          </span>
+        </Link>
+      ))}
+    </nav>
+  );
+}
+
 export function CoachView() {
-  const { ready, today, chat, askCoach, clearChat, busy } = useUserState();
+  const { ready, chat, askCoach, clearChat, busy } = useUserState();
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
   const scrollAnchor = useRef<HTMLDivElement | null>(null);
@@ -68,149 +99,95 @@ export function CoachView() {
   };
 
   return (
-    <div className="flex min-h-[calc(100dvh-9rem)] flex-col gap-4">
+    <div className="flex min-h-[calc(100dvh-9rem)] flex-col gap-5">
       <PageHeader
         eyebrow="Coach"
-        title="AI Coach"
-        description="Ask about your readiness, today's session, training and recovery."
+        title="Ask Coach"
+        description="Ask about today's session, your readiness, or your recorded training."
       />
-
-      {today ? (
-        <div className="surface flex items-center gap-3 px-4 py-3">
-          <StatusBadge status={today.readiness.status} />
-          <p className="min-w-0 truncate text-[0.78rem] text-muted">
-            {today.training.recommendation.primary_name} · {today.training.recommendation.session_demand} ·{" "}
-            {today.training.recommendation.duration}
-          </p>
-        </div>
-      ) : (
-        <Skeleton className="h-12 w-full" />
-      )}
 
       <div className="flex-1 space-y-5">
         {chat.length === 0 ? (
-          <div className="space-y-4 pt-2">
-            <div className="space-y-1.5">
-              <p className="flex items-center gap-2 text-sm font-medium">
+          <div className="space-y-5">
+            <div className="space-y-2">
+              <p className="flex items-center gap-2 text-[0.82rem] font-medium">
                 <Sparkles className="h-4 w-4 text-muted" aria-hidden />
-                Start a conversation
+                Suggested questions
               </p>
-              <p className="text-[0.8rem] leading-relaxed text-muted">
-                Questions about your own numbers are answered from your recorded data. Explanation questions may use the
-                configured AI provider.
-              </p>
+              <QuestionList onAsk={(question) => void send(question)} disabled={!ready || busy} />
             </div>
-            <ul className="divide-y divide-subtle border-y border-subtle">
-              {STARTERS.map((starter) => (
-                <li key={starter}>
-                  <button
-                    type="button"
-                    disabled={!ready || busy}
-                    onClick={() => void send(starter)}
-                    className="flex min-h-12 w-full items-center justify-between gap-3 text-left text-sm transition-colors hover:text-foreground disabled:opacity-50"
-                  >
-                    {starter}
-                    <span aria-hidden className="text-muted">
-                      →
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-            <p className="text-[0.7rem] font-medium text-muted">Personal response</p>
-            <ul className="divide-y divide-subtle border-y border-subtle">
-              {RESPONSE_STARTERS.map((starter) => (
-                <li key={starter}>
-                  <button
-                    type="button"
-                    disabled={!ready || busy}
-                    onClick={() => void send(starter)}
-                    className="flex min-h-12 w-full items-center justify-between gap-3 text-left text-sm transition-colors hover:text-foreground disabled:opacity-50"
-                  >
-                    {starter}
-                    <span aria-hidden className="text-muted">
-                      →
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-            <p className="text-[0.7rem] font-medium text-muted">In-session calibration</p>
-            <ul className="divide-y divide-subtle border-y border-subtle">
-              {CALIBRATION_STARTERS.map((starter) => (
-                <li key={starter}>
-                  <button
-                    type="button"
-                    disabled={!ready || busy}
-                    onClick={() => void send(starter)}
-                    className="flex min-h-12 w-full items-center justify-between gap-3 text-left text-sm transition-colors hover:text-foreground disabled:opacity-50"
-                  >
-                    {starter}
-                    <span aria-hidden className="text-muted">
-                      →
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
+            <TopicLinks />
           </div>
-        ) : null}
-
-        {chat.map((message) => {
-          const provenance = message.kind ? PROVENANCE[message.kind] : null;
-          if (message.role === "user") {
-            return (
-              <div key={message.id} className="flex justify-end">
-                <p className="max-w-[85%] rounded-[1.1rem] rounded-br-md bg-primary px-4 py-2.5 text-sm leading-relaxed text-primary-foreground">
-                  {message.content}
-                </p>
-              </div>
-            );
-          }
-          return (
-            <article key={message.id} className="flex gap-3">
-              <span
-                className={cn(
-                  "mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[0.62rem] font-bold",
-                  provenance?.tone === "verified"
-                    ? "bg-[var(--status-green-soft)] text-[var(--status-green)]"
-                    : "bg-subtle text-muted",
-                )}
-                aria-hidden
-              >
-                {provenance?.tone === "verified" ? "✓" : "AI"}
-              </span>
-              <div className="min-w-0 flex-1 space-y-1.5">
-                <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-muted">
-                  {provenance?.label ?? "Answer"}
-                </p>
-                <RichText text={message.content} />
-                {message.kind === "ai_explanation" ? (
-                  <details className="group">
-                    <summary className="flex min-h-9 cursor-pointer list-none items-center gap-1 text-[0.72rem] font-medium text-muted">
-                      See reasoning →
-                      <span className="transition-transform group-open:rotate-90" aria-hidden>
-                        ›
-                      </span>
-                    </summary>
-                    <p className="mt-1.5 text-[0.72rem] leading-relaxed text-muted">
-                      This wording is generated from your verified structured facts. The recommendation and every
-                      personal number come from the deterministic decision system, not from the model.
+        ) : (
+          <>
+            {chat.map((message) => {
+              const provenance = message.kind ? PROVENANCE[message.kind] : null;
+              if (message.role === "user") {
+                return (
+                  <div key={message.id} className="flex justify-end">
+                    <p className="max-w-[85%] rounded-[1.1rem] rounded-br-md bg-primary px-4 py-2.5 text-sm leading-relaxed text-primary-foreground">
+                      {message.content}
                     </p>
-                    {message.notice ? (
-                      <p className="mt-1 text-[0.72rem] leading-relaxed text-muted">{message.notice}</p>
+                  </div>
+                );
+              }
+              return (
+                <article key={message.id} className="flex gap-3">
+                  <span
+                    className={cn(
+                      "mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[0.62rem] font-bold",
+                      provenance?.tone === "verified"
+                        ? "bg-[var(--status-green-soft)] text-[var(--status-green)]"
+                        : "bg-subtle text-muted",
+                    )}
+                    aria-hidden
+                  >
+                    {provenance?.tone === "verified" ? "✓" : "AI"}
+                  </span>
+                  <div className="min-w-0 flex-1 space-y-1.5">
+                    <p className="label-quiet font-semibold">{provenance?.label ?? "Answer"}</p>
+                    <RichText text={message.content} />
+                    {message.kind === "ai_explanation" ? (
+                      <details className="group">
+                        <summary className="flex min-h-9 cursor-pointer list-none items-center gap-1 text-[0.72rem] font-medium text-muted">
+                          See reasoning →
+                          <span className="transition-transform group-open:rotate-90" aria-hidden>
+                            ›
+                          </span>
+                        </summary>
+                        <p className="mt-1.5 text-[0.72rem] leading-relaxed text-muted">
+                          This wording is generated from your verified structured facts. The recommendation and every
+                          personal number come from the deterministic decision system, not from the model.
+                        </p>
+                        {message.notice ? (
+                          <p className="mt-1 text-[0.72rem] leading-relaxed text-muted">{message.notice}</p>
+                        ) : null}
+                      </details>
+                    ) : message.notice ? (
+                      <p className="flex items-start gap-1.5 text-[0.7rem] leading-relaxed text-muted">
+                        <CircleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+                        {message.notice}
+                      </p>
                     ) : null}
-                  </details>
-                ) : message.notice ? (
-                  <p className="flex items-start gap-1.5 text-[0.7rem] leading-relaxed text-muted">
-                    <CircleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
-                    {message.notice}
-                  </p>
-                ) : null}
+                  </div>
+                </article>
+              );
+            })}
+
+            {/* Once a conversation exists the home stays short: the library and
+                the topic links fold away behind one line. */}
+            <details className="divider group pt-4">
+              <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 text-[0.84rem] font-medium">
+                Suggested questions
+                <ChevronRight className="h-4 w-4 text-muted transition-transform group-open:rotate-90" aria-hidden />
+              </summary>
+              <div className="space-y-5 pt-3">
+                <QuestionList onAsk={(question) => void send(question)} disabled={!ready || busy} />
+                <TopicLinks />
               </div>
-            </article>
-          );
-        })}
+            </details>
+          </>
+        )}
 
         {busy && chat[chat.length - 1]?.role === "user" ? (
           <div className="flex gap-3">
