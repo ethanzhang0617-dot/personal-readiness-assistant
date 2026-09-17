@@ -189,9 +189,21 @@ def upsert_session_overlay(state: UserState, session_id: str, fields: Mapping[st
 
 
 def seed_demo_responses(state: UserState, case: str) -> UserState:
-    """Demo-only: attach seeded response data to the client overlay."""
+    """Demo-only: attach seeded response data to the client overlay.
+
+    The seeded episodes are recorded at the demand the product actually prescribes
+    for this state today, so a demo case can never claim an established pattern
+    that the current recommendation would not even count.
+    """
+    # Imported lazily: readiness/training services import this package's siblings
+    # at module import time, and this keeps that ordering free of cycles.
+    from backend.services import readiness_service, training_service
+
     profile = materialise(state)
-    seed = demo_response_seed(profile, case)
+    draft = check_in_draft(state, profile)
+    assessment = readiness_service.assess(profile, draft)
+    recommendation = training_service.recommend(profile, assessment)
+    seed = demo_response_seed(profile, case, str(recommendation.get("intensity") or "Normal"))
     if not seed:
         return state
     payload = state.model_dump()
@@ -201,4 +213,21 @@ def seed_demo_responses(state: UserState, case: str) -> UserState:
         row.update(fields)
         rows[session_id] = row
     payload["training_history"] = list(rows.values())
+    return UserState(**payload)
+
+
+def record_adaptation(state: UserState, event: Mapping[str, Any]) -> UserState:
+    """Upsert today's Personal Response decision into the adaptation history.
+
+    One meaningful event per day: if the product recomputes the same day (a new
+    check-in, a logged session), the entry is replaced rather than duplicated.
+    Older episodes stay in the history; the log is only bounded for size.
+    """
+    payload = state.model_dump()
+    when = str(event.get("date") or "")
+    log = [dict(row) for row in (payload.get("adaptation_log") or []) if str(row.get("date")) != when]
+    if when:
+        log.append(dict(event))
+    log.sort(key=lambda row: str(row.get("date")))
+    payload["adaptation_log"] = log[-90:]
     return UserState(**payload)

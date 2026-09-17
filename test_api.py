@@ -504,3 +504,116 @@ def test_red_readiness_cannot_be_overridden_by_personal_response(client: TestCli
     assert payload["today"]["readiness"]["status"] in {"RED", "AMBER", "STOP / PROFESSIONAL REVIEW"}
     assert response["adjustment"] <= 0
     assert recommendation["base_session_demand"] == recommendation["session_demand"] or response["adjustment"] == -1
+
+
+# --------------------------------------------------------------------------- #
+# V1.3 — Adaptive Decision Loop Phase 2
+# --------------------------------------------------------------------------- #
+
+
+def test_personal_response_exposes_confidence_coverage_and_profile(client: TestClient) -> None:
+    payload = client.get("/api/personal-response?response_demo=established_good").json()
+
+    assert payload["confidence"]["state"] == "Strong"
+    assert payload["confidence_state"] == "Strong"
+    assert payload["confidence"]["label"] == "Strong evidence"
+    # Qualitative vocabulary only — never a percentage or a physiological score.
+    assert "%" not in json.dumps(payload["confidence"])
+    assert payload["relevant_episodes"] == payload["relevant"]["count"] == 6
+    assert payload["relevant"]["band"] == "High"
+    assert payload["coverage"]["episodes_complete"] == 6
+    assert payload["consistency"]["consistent"] is True
+
+    high = next(row for row in payload["profile"]["bands"] if row["band"] == "High")
+    assert high["observations"] == 6 and high["evidence"] == "Established"
+    assert payload["bands_profile"] == payload["profile"]["bands"]
+
+
+def test_personal_response_profile_hides_unsupported_focus_patterns(client: TestClient) -> None:
+    thin = client.get("/api/personal-response?response_demo=insufficient").json()
+    assert thin["confidence"]["state"] == "Limited"
+    assert thin["profile"]["focus"] == []
+
+
+def test_state_personal_response_returns_the_adaptation_history(client: TestClient) -> None:
+    state = _seeded_state(client)
+    envelope = client.post("/api/state/today", json={"state": state}).json()
+    # The evaluated decision is recorded in the client-owned state.
+    assert len(envelope["state"]["adaptation_log"]) == 1
+
+    payload = client.post("/api/state/personal-response",
+                          json={"state": envelope["state"]}).json()
+    history = payload["adaptation_history"]
+    assert len(history) == 1
+    assert history[0]["result"] == "reduced" and history[0]["adjustment"] == -1
+    assert history[0]["base_band"] == "High" and history[0]["final_band"] == "Moderate"
+    assert history[0]["confidence"] == "Developing"
+
+
+def test_decision_trace_personal_response_step_carries_structured_detail(client: TestClient) -> None:
+    payload = client.post("/api/state/today", json={"state": _seeded_state(client)}).json()["today"]
+    step = next(row for row in payload["training"]["decision_trace"] if row["step"] == "PERSONAL RESPONSE")
+    detail = step["detail"]
+    assert detail["evidence"] == "3 relevant sessions at High demand"
+    assert detail["confidence"] == "Developing evidence"
+    assert detail["adjustment"] == "Reduced one step (High → Moderate)"
+    assert detail["pattern"].endswith("(Consistent)")
+
+
+def test_recommendation_carries_the_confidence_without_changing_the_base(client: TestClient) -> None:
+    today = client.post("/api/state/today", json={"state": _seeded_state(client)}).json()["today"]
+    recommendation = today["training"]["recommendation"]
+    assert recommendation["recommendation_confidence"]["state"] == "Developing"
+    # Base and final stay separate; the engine's own demand is never overwritten.
+    assert recommendation["base_session_demand"] == "Normal"
+    assert recommendation["session_demand"] == "Reduced / autoregulated"
+    assert today["personal_response"]["base_demand"] == "Normal"
+    assert today["personal_response"]["final_demand"] == "Reduced / autoregulated"
+
+
+def test_coach_answers_confidence_and_history_questions_with_zero_provider_calls(
+    client: TestClient, monkeypatch
+) -> None:
+    calls: list[str] = []
+
+    def counted_post(url, *args, **kwargs):
+        calls.append(str(url))
+        raise AssertionError("personal response questions must not call the AI provider")
+
+    monkeypatch.setattr(ai_engine.requests, "post", counted_post)
+    state = _seeded_state(client)
+    for question in ("How confident is today's personalized recommendation?",
+                     "How many sessions support this adjustment?",
+                     "Has Personal Response changed my training before?",
+                     "Why didn't you increase today's training if I usually recover well?"):
+        payload = client.post("/api/state/coach", json={"state": state, "question": question, "history": []}).json()
+        assert payload["kind"] == "verified_data", question
+        assert payload["ai_used"] is False, question
+        assert payload["answer"], question
+    assert calls == []
+
+
+def test_coach_explains_why_todays_session_was_not_increased(client: TestClient) -> None:
+    state = client.get(
+        "/api/state/base?profile_id=demo-ethan&scenario=Well Recovered Day&response_demo=established_good"
+    ).json()["state"]
+    payload = client.post(
+        "/api/state/coach",
+        json={"state": state, "question": "Why didn't you increase today's training if I usually recover well?",
+              "history": []},
+    ).json()
+    assert payload["kind"] == "verified_data" and payload["ai_used"] is False
+    assert "readiness permits" in payload["answer"]
+    assert "RIR" in payload["answer"]
+
+
+def test_coach_confidence_answer_reports_the_recorded_state(client: TestClient) -> None:
+    state = client.get(
+        "/api/state/base?profile_id=demo-ethan&scenario=Well Recovered Day&response_demo=established_good"
+    ).json()["state"]
+    payload = client.post(
+        "/api/state/coach",
+        json={"state": state, "question": "How confident is today's personalized recommendation?", "history": []},
+    ).json()
+    assert "Strong" in payload["answer"]
+    assert "6 recent sessions" in payload["answer"]

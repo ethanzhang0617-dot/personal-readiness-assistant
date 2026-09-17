@@ -67,6 +67,22 @@ MAX_LINK_GAP_DAYS = 3
 #: How many prior check-ins define "the user's own recent context".
 CONTEXT_WINDOW = 7
 
+#: Recency policy (product heuristic): only the most recent episodes inside this
+#: window are allowed to drive personalisation. Older episodes stay visible in the
+#: history and in the profile counts, they simply stop influencing today.
+RECENT_WINDOW_DAYS = 56
+MAX_RECENT_EPISODES = 12
+
+#: Consistency: the largest group of episodes pointing the same way.
+CONSISTENT_RATIO = 0.6
+
+#: Recommendation Confidence states (evidence about the personalisation, never
+#: confidence that the user is physiologically recovered).
+CONFIDENCE_STATES = ("Limited", "Developing", "Strong")
+
+#: Local soreness at or above this value blocks any optional extra effort.
+EXTRA_EFFORT_SORENESS_LIMIT = 4
+
 #: How many sessions a demo seed attaches feedback to.
 DEMO_CASES = ("insufficient", "emerging", "poor_high_tolerance", "established_good")
 
@@ -311,6 +327,11 @@ def evaluate(profile: Mapping[str, Any], assessment: Mapping[str, Any],
     status = str(assessment.get("overall_readiness") or "")
     base_demand = str(recommendation.get("intensity") or "")
     base_band = band_for_demand(base_demand)
+    relevant = relevant_episodes(episodes, base_band, today)
+    consistency = pattern_consistency(relevant)
+    confidence = recommendation_confidence(relevant, consistency)
+    coverage = evidence_coverage(episodes, today)
+    profile_view = response_profile(episodes, today)
 
     decision: dict[str, Any] = {
         "available": base_band is not None,
@@ -323,6 +344,14 @@ def evaluate(profile: Mapping[str, Any], assessment: Mapping[str, Any],
         "evidence": summary["evidence"],
         "summary": summary,
         "episodes": episodes,
+        "relevant": relevant_summary(relevant, base_band),
+        "consistency": consistency,
+        "confidence": confidence,
+        "coverage": coverage,
+        "profile": profile_view,
+        "_relevant_episodes": relevant,
+        "within_tier": {"available": False, "guidance": None, "reason": None},
+        "no_increase_reason": None,
         "reason": "No adjustment",
         "detail": "Not enough history yet" if summary["evidence"] == "Insufficient" else "Recent response did not change today's demand",
     }
@@ -332,6 +361,15 @@ def evaluate(profile: Mapping[str, Any], assessment: Mapping[str, Any],
     if status in {RED, STOP} or base_band in (None, "Low"):
         if status in {RED, STOP}:
             decision["detail"] = "Readiness or safety routing takes precedence"
+        elif base_band is None:
+            decision["detail"] = ("Today's training type sits outside the demand bands Personal Response covers, "
+                                  "so the session is unchanged.")
+        else:
+            decision["detail"] = ("Today's base recommendation is already the lowest demand band, so Personal "
+                                  "Response leaves it unchanged.")
+        decision["within_tier"] = within_tier_guidance(decision, assessment, base_band, status)
+        if decision["within_tier"].get("reason") and not decision["within_tier"].get("available"):
+            decision["no_increase_reason"] = decision["within_tier"]["reason"]
         return decision
 
     index = DEMAND_BANDS.index(base_band)
@@ -339,22 +377,25 @@ def evaluate(profile: Mapping[str, Any], assessment: Mapping[str, Any],
     lower = summary["bands"][index - 1] if index > 0 else None
 
     # Downward: repeated poorer-than-usual responses at the current demand.
-    if current["observations"] >= 3 and current["poorer"] / current["observations"] >= 0.6:
-        return _decide(decision, summary, index, -1,
-                       f"We reduced today's session from {base_band} to {DEMAND_BANDS[index - 1]} demand because "
-                       f"{current['poorer']} of your last {current['observations']} {base_band.lower()}-demand sessions "
-                       f"were followed by a poorer-than-usual next-day response.")
+    if (current["observations"] >= 3 and current["poorer"] / current["observations"] >= 0.6
+            and consistency["direction"] == "poorer_than_usual"):
+        decision = _decide(decision, summary, index, -1,
+                           f"We reduced today's session from {base_band} to {DEMAND_BANDS[index - 1]} demand because "
+                           f"{current['poorer']} of your last {current['observations']} {base_band.lower()}-demand sessions "
+                           f"were followed by a poorer-than-usual next-day response.")
+        decision["within_tier"] = within_tier_guidance(decision, assessment, base_band, status)
+        return decision
 
-    # Upward: stronger evidence, and only while readiness is fully green.
-    if index + 1 < len(DEMAND_BANDS):
-        higher = summary["bands"][index + 1]
-        tolerated = higher["observations"] - higher["poorer"]
-        if (status == GREEN and higher["evidence"] == "Established"
-                and higher["observations"] >= 6 and tolerated / higher["observations"] >= 0.8):
-            return _decide(decision, summary, index, +1,
-                           f"We raised today's session from {base_band} to {DEMAND_BANDS[index + 1]} demand because "
-                           f"{tolerated} of your last {higher['observations']} {DEMAND_BANDS[index + 1].lower()}-demand "
-                           f"sessions were tolerated as usual or better, and today's readiness is Green.")
+    # Phase 2 replaces the unreachable "raise the demand tier" branch with an
+    # honest within-tier option: when the user repeatedly tolerates the current
+    # prescribed demand well, the product may point at the harder end of the
+    # *existing* effort range. It never invents a new tier, volume or precision.
+    decision["within_tier"] = within_tier_guidance(decision, assessment, base_band, status)
+    if decision["within_tier"]["available"]:
+        decision["reason"] = decision["within_tier"]["guidance"]
+        decision["direction"] = "within_tier"
+    elif decision["within_tier"]["reason"]:
+        decision["no_increase_reason"] = decision["within_tier"]["reason"]
 
     if summary["evidence"] == "Insufficient":
         decision["detail"] = "Not enough history yet"
@@ -381,6 +422,252 @@ def _decide(decision: dict[str, Any], summary: Mapping[str, Any], index: int, ad
     return decision
 
 
+# --------------------------------------------------------------------------- #
+# Phase 2 — profile, evidence coverage, confidence, consistency and within-tier
+# --------------------------------------------------------------------------- #
+
+
+def relevant_episodes(episodes: Iterable[Mapping[str, Any]], band: str | None,
+                      today: date | None = None) -> list[dict[str, Any]]:
+    """Complete episodes at this demand inside the recency window, newest first."""
+    if band is None:
+        return []
+    cutoff = (today or date.today()) - timedelta(days=RECENT_WINDOW_DAYS)
+    rows = [
+        dict(row) for row in episodes
+        if row.get("complete") and row.get("band") == band and (_as_date(row.get("date")) or cutoff) >= cutoff
+    ]
+    return rows[:MAX_RECENT_EPISODES]
+
+
+def relevant_summary(relevant: Iterable[Mapping[str, Any]], band: str | None) -> dict[str, Any]:
+    rows = list(relevant)
+    return {
+        "band": band,
+        "count": len(rows),
+        "session_ids": [row.get("session_id") for row in rows],
+        "window_days": RECENT_WINDOW_DAYS,
+        "max_episodes": MAX_RECENT_EPISODES,
+    }
+
+
+def pattern_consistency(episodes: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
+    """How much the observed episodes point the same way (never a probability)."""
+    rows = list(episodes)
+    counts = {"poorer_than_usual": 0, "as_usual": 0, "better_than_usual": 0}
+    for row in rows:
+        verdict = str((row.get("response") or {}).get("verdict"))
+        if verdict in counts:
+            counts[verdict] += 1
+    total = len(rows)
+    if total == 0:
+        return {"label": "Not enough evidence", "direction": None, "ratio": 0.0,
+                "consistent": False, "counts": counts, "episodes": 0}
+    # Deterministic tie-break order (poorer → as usual → better) so the reported
+    # leader never changes between two identical runs.
+    order = ("poorer_than_usual", "as_usual", "better_than_usual")
+    leader = max(order, key=lambda key: (counts[key], -order.index(key)))
+    ratio = counts[leader] / total
+    consistent = total >= 3 and ratio >= CONSISTENT_RATIO
+    label = "Consistent" if consistent else ("Mixed" if total >= 3 else "Not enough evidence")
+    return {
+        "label": label,
+        "direction": leader if consistent else "mixed",
+        "ratio": round(ratio, 2),
+        "consistent": consistent,
+        "counts": counts,
+        "episodes": total,
+    }
+
+
+def recommendation_confidence(relevant: Iterable[Mapping[str, Any]], consistency: Mapping[str, Any]) -> dict[str, Any]:
+    """Qualitative confidence in the *personalisation evidence*, never in recovery."""
+    count = len(list(relevant))
+    if count < 3:
+        state = "Limited"
+        explanation = "Fewer than three recent sessions at this demand have a complete response episode."
+    elif count >= 6 and consistency.get("consistent"):
+        state = "Strong"
+        explanation = f"{count} recent sessions at this demand with a consistent response pattern."
+    else:
+        state = "Developing"
+        explanation = (f"{count} relevant sessions at this demand; the pattern is still "
+                       f"{'mixed' if not consistency.get('consistent') else 'building'}.")
+    return {
+        "state": state,
+        "label": f"{state} evidence",
+        "explanation": explanation,
+        "relevant_episodes": count,
+        "consistent": bool(consistency.get("consistent")),
+        "factors": {
+            "relevant_episodes": count,
+            "recency_window_days": RECENT_WINDOW_DAYS,
+            "max_recent_episodes": MAX_RECENT_EPISODES,
+            "agreement_ratio": consistency.get("ratio", 0.0),
+            "dominant_direction": consistency.get("direction"),
+        },
+        "note": ("Recommendation Confidence describes how much recent personal evidence supports the "
+                 "personalisation. It is not a clinical confidence, a statistical probability, or a claim about recovery."),
+    }
+
+
+def evidence_coverage(episodes: Iterable[Mapping[str, Any]], today: date | None = None) -> dict[str, Any]:
+    day = today or date.today()
+    rows = list(episodes)
+    complete = [row for row in rows if row.get("complete")]
+    pending = [row for row in rows if row.get("link") == "pending"]
+    feedback_only = [row for row in rows if row.get("feedback") and row.get("link") != "linked"]
+    dates = [_as_date((row.get("after") or {}).get("date")) for row in complete]
+    last_date = max((value for value in dates if value), default=None)
+    band_counts = []
+    for band in DEMAND_BANDS:
+        band_counts.append({"band": band, "observations": sum(1 for row in complete if row.get("band") == band)})
+    return {
+        "episodes_total": len(rows),
+        "episodes_complete": len(complete),
+        "episodes_pending": len(pending),
+        "feedback_without_check_in": len(feedback_only),
+        "last_complete_date": last_date.isoformat() if last_date else None,
+        "last_complete_days_ago": (day - last_date).days if last_date else None,
+        "bands": band_counts,
+        "note": ("Complete episodes have your post-session feedback and a following morning check-in. "
+                 "Older episodes stay in the history even when they are outside the recent window."),
+    }
+
+
+def _focus_pattern(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    observations = len(rows)
+    poorer = sum(1 for row in rows if (row.get("response") or {}).get("verdict") == "poorer_than_usual")
+    better = sum(1 for row in rows if (row.get("response") or {}).get("verdict") == "better_than_usual")
+    as_usual = observations - poorer - better
+    if observations < 3:
+        pattern = "Insufficient evidence"
+    elif poorer / observations >= CONSISTENT_RATIO:
+        pattern = "Usually harder to recover from"
+    elif better / observations >= CONSISTENT_RATIO:
+        pattern = "Generally tolerated better than expected"
+    else:
+        pattern = "Generally tolerated as expected"
+    return {"observations": observations, "poorer": poorer, "as_usual": as_usual, "better": better,
+            "pattern": pattern, "evidence": evidence_state(observations)}
+
+
+def response_profile(episodes: Iterable[Mapping[str, Any]], today: date | None = None) -> dict[str, Any]:
+    """Personal Response Profile: by demand band, and by focus only where supported."""
+    day = today or date.today()
+    rows = list(episodes)
+    complete = [row for row in rows if row.get("complete")]
+    bands = []
+    for band in DEMAND_BANDS:
+        band_rows = [row for row in complete if row.get("band") == band]
+        stats = _focus_pattern(band_rows)
+        recent = relevant_episodes(rows, band, day)
+        recent_stats = _focus_pattern(recent)
+        bands.append({
+            "band": band,
+            "demand": BAND_DEMAND[band],
+            **stats,
+            "recent_observations": recent_stats["observations"],
+            "recent_pattern": recent_stats["pattern"] if recent_stats["observations"] >= 3 else "Insufficient evidence",
+        })
+
+    focus: list[dict[str, Any]] = []
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for row in complete:
+        name = str(row.get("focus") or "").strip()
+        if name:
+            grouped.setdefault(name, []).append(row)
+    for name, group in sorted(grouped.items(), key=lambda item: -len(item[1])):
+        if len(group) < 3:      # never present a category the data cannot support
+            continue
+        focus.append({"focus": name, **_focus_pattern(group)})
+    focus = focus[:4]
+
+    return {
+        "bands": bands,
+        "focus": focus,
+        "focus_note": ("Training-focus patterns appear only once at least three complete episodes exist for that "
+                       "focus, so the product never presents a category its data cannot support."),
+    }
+
+
+CEILING_MESSAGE = ("Good tolerance observed. No additional increase is recommended because today's base "
+                   "recommendation already uses the available demand range.")
+
+
+def within_tier_guidance(decision: Mapping[str, Any], assessment: Mapping[str, Any],
+                         base_band: str | None, status: str) -> dict[str, Any]:
+    """Optional extra effort *inside* the already-permitted session demand.
+
+    Phase 1 identified that raising the demand *tier* is unreachable, because the
+    engine's demand is already the tier readiness permits. Phase 2 therefore offers
+    a bounded within-tier option instead: when the user repeatedly tolerates the
+    prescribed demand well, they may work toward the harder end of the existing RIR
+    range. No tier change, no extra sets, no new precision.
+    """
+    relevant = list(decision.get("_relevant_episodes") or [])
+    confidence = str((decision.get("confidence") or {}).get("state"))
+    counts = (decision.get("consistency") or {}).get("counts") or {}
+    total = len(relevant)
+    poorer = int(counts.get("poorer_than_usual", 0))
+    tolerates_well = total >= 3 and poorer / total <= 0.2
+
+    if confidence != "Strong" or not tolerates_well:
+        return {"available": False, "guidance": None, "reason": None}
+    if status != GREEN:
+        return {"available": False, "guidance": None,
+                "reason": ("Good tolerance observed. No extra effort is suggested today because today's readiness is "
+                           "not Green, so the session stays as prescribed.")}
+    soreness = (assessment.get("today_data") or {}).get("local_soreness") or {}
+    if assessment.get("safety_flags") or any(_number(value) and _number(value) >= EXTRA_EFFORT_SORENESS_LIMIT
+                                            for value in soreness.values()):
+        return {"available": False, "guidance": None,
+                "reason": ("Good tolerance observed. No extra effort is suggested today because of the safety or "
+                           "soreness you reported.")}
+    if base_band not in {"Moderate", "High"}:
+        return {"available": False, "guidance": None, "reason": CEILING_MESSAGE}
+
+    effort = BAND_RIR.get(base_band, "")
+    range_text = effort.split(" ", 1)[0] if effort else "the prescribed"
+    return {
+        "available": True,
+        "guidance": (f"You have tolerated this demand well in your recent sessions. If it feels right today, take "
+                     f"your main sets toward the harder end of the prescribed {range_text} RIR range. "
+                     f"No extra sets are added."),
+        "reason": None,
+        "scope": "Within the demand already prescribed — no tier change",
+    }
+
+
+def adaptation_event(decision: Mapping[str, Any], day: date | None = None) -> dict[str, Any]:
+    """One meaningful decision event for the adaptation history (per day)."""
+    when = day or date.today()
+    adjustment = int(decision.get("adjustment") or 0)
+    if adjustment < 0:
+        result = "reduced"
+    elif adjustment > 0:
+        result = "raised"
+    elif (decision.get("within_tier") or {}).get("available"):
+        result = "within_tier"
+    else:
+        result = "no_change"
+    reason = decision.get("reason") if adjustment or result == "within_tier" else None
+    return {
+        "date": when.isoformat(),
+        "base_demand": decision.get("base_demand"),
+        "base_band": decision.get("base_band"),
+        "final_demand": decision.get("final_demand"),
+        "final_band": decision.get("final_band"),
+        "adjustment": adjustment,
+        "result": result,
+        "confidence": (decision.get("confidence") or {}).get("state"),
+        "evidence": decision.get("evidence"),
+        "relevant_episodes": (decision.get("relevant") or {}).get("count", 0),
+        "reason": reason or decision.get("no_increase_reason") or decision.get("detail") or "No adjustment",
+        "recorded_at": datetime.now().isoformat(timespec="seconds"),
+    }
+
+
 def final_rir(decision: Mapping[str, Any], engine_rir: str | None) -> str | None:
     """Effort guidance for the final demand band (engine wording when unchanged)."""
     if not decision.get("adjustment"):
@@ -388,14 +675,23 @@ def final_rir(decision: Mapping[str, Any], engine_rir: str | None) -> str | None
     return BAND_RIR.get(str(decision.get("final_band")), engine_rir)
 
 
-def demo_seed(profile: Mapping[str, Any], case: str) -> dict[str, dict[str, Any]]:
+def demo_seed(profile: Mapping[str, Any], case: str,
+              base_demand: str = "Normal") -> dict[str, dict[str, Any]]:
     """Demo-only response data, keyed by session id.
 
     Gives the portfolio demo the four required cases without cluttering the normal
     consumer workflow, and without inventing data for real user sessions.
+
+    The seeded episodes are recorded at ``base_demand`` — the demand the product
+    actually prescribes for this profile today. A demo that seeded episodes at a
+    *different* demand would show "Limited evidence" while claiming to show an
+    established pattern, which is exactly the kind of dishonest demo Phase 2
+    removes.
     """
     if case not in DEMO_CASES:
         return {}
+    if band_for_demand(base_demand) is None:
+        base_demand = "Normal"
     # Only sessions that are actually followed by a check-in inside the linking
     # window can become a complete episode, so the demo seeds those.
     rows = _daily_rows(profile)
@@ -438,7 +734,7 @@ def demo_seed(profile: Mapping[str, Any], case: str) -> dict[str, dict[str, Any]
         seed: dict[str, dict[str, Any]] = {}
         for session in sessions[-4:]:
             seed[str(session.get("session_id"))] = {
-                "response_context": snapshot(session, "Reduced / autoregulated"),
+                "response_context": snapshot(session, base_demand),
                 "response_feedback": {"difficulty": 3, "performance": 3, "completion": "Completed", "note": "", "submitted_at": "demo"},
             }
         return seed
@@ -447,7 +743,7 @@ def demo_seed(profile: Mapping[str, Any], case: str) -> dict[str, dict[str, Any]
         seed = {}
         for session in sessions[-3:]:
             seed[str(session.get("session_id"))] = {
-                "response_context": snapshot(session, "Normal"),
+                "response_context": snapshot(session, base_demand),
                 "response_feedback": {"difficulty": 5, "performance": 2, "completion": "Stopped early",
                                       "note": "Demo: high-demand sessions were not well tolerated.", "submitted_at": "demo"},
             }
@@ -456,7 +752,7 @@ def demo_seed(profile: Mapping[str, Any], case: str) -> dict[str, dict[str, Any]
     seed = {}
     for session in sessions[-6:]:
         seed[str(session.get("session_id"))] = {
-            "response_context": snapshot(session, "Reduced / autoregulated"),
+            "response_context": snapshot(session, base_demand),
             "response_feedback": {"difficulty": 2, "performance": 4, "completion": "Completed", "note": "", "submitted_at": "demo"},
         }
     return seed

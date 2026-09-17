@@ -105,6 +105,7 @@ class TrainingRecommendationSummary(ApiModel):
     #: V1.3: the engine's own demand is preserved next to the final, adapted one.
     base_session_demand: str | None = None
     personal_response: dict[str, Any] = Field(default_factory=dict)
+    recommendation_confidence: dict[str, Any] = Field(default_factory=dict)
     adaptation: dict[str, Any] | None = None
     duration: str
     estimated_duration_min_range: list[int] | None = None
@@ -152,6 +153,8 @@ class DecisionTraceStep(ApiModel):
     step: str
     value: str
     source: str = "deterministic"
+    #: V1.3 Phase 2: structured, scannable detail for the PERSONAL RESPONSE step.
+    detail: dict[str, Any] | None = None
 
 
 class TodayWhy(ApiModel):
@@ -330,6 +333,8 @@ class UserState(ApiModel):
     check_in: DailyRow | None = None
     daily_history: list[DailyRow] = Field(default_factory=list)
     training_history: list[SessionRow] = Field(default_factory=list)
+    #: V1.3 Phase 2: one meaningful adaptation decision per day (newest last).
+    adaptation_log: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class ScenarioInfo(ApiModel):
@@ -470,6 +475,18 @@ class PersonalResponseResponse(ApiModel):
     evidence: str | None = None
     reason: str | None = None
     detail: str | None = None
+    no_increase_reason: str | None = None
+    confidence: dict[str, Any] = Field(default_factory=dict)
+    confidence_state: str | None = None
+    coverage: dict[str, Any] = Field(default_factory=dict)
+    consistency: dict[str, Any] = Field(default_factory=dict)
+    relevant: dict[str, Any] = Field(default_factory=dict)
+    relevant_episodes: int = 0
+    profile: dict[str, Any] = Field(default_factory=dict)
+    bands_profile: list[dict[str, Any]] = Field(default_factory=list)
+    focus_profile: list[dict[str, Any]] = Field(default_factory=list)
+    within_tier: dict[str, Any] = Field(default_factory=dict)
+    adaptation_history: list[dict[str, Any]] = Field(default_factory=list)
     summary: dict[str, Any] = Field(default_factory=dict)
     bands: list[dict[str, Any]] = Field(default_factory=list)
     episodes: list[dict[str, Any]] = Field(default_factory=list)

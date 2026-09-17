@@ -74,14 +74,14 @@ def _context(profile_id: str | None, check_in: dict[str, Any] | None = None):
 
 
 def _today_payload(profile: dict[str, Any], assessment: dict[str, Any],
-                   recommendation: dict[str, Any]) -> dict[str, Any]:
+                   recommendation: dict[str, Any], decision: Mapping[str, Any] | None = None) -> dict[str, Any]:
     """One Today payload shape, shared by the demo and state endpoints.
 
     V1.3 adds the bounded Personal Response layer on top of the engine's base
     decision: the base recommendation is preserved, the final one is what the
     product presents, and the Decision Trace shows the extra step.
     """
-    decision = response_service.evaluate(profile, assessment, recommendation)
+    decision = decision or response_service.evaluate(profile, assessment, recommendation)
     base_summary = training_service.summary(recommendation)
     summary = response_service.apply_to_summary(base_summary, decision, base_summary.get("rir_guidance"))
     trace = response_service.apply_to_trace(training_service.decision_trace(recommendation), decision)
@@ -119,6 +119,11 @@ def _state_context(state) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any
 def _response_decision(profile: dict[str, Any], assessment: dict[str, Any],
                        recommendation: dict[str, Any]) -> dict[str, Any]:
     return response_service.evaluate(profile, assessment, recommendation)
+
+
+def _record(state: state_service.UserState, decision: Mapping[str, Any]) -> state_service.UserState:
+    """Persist today's Personal Response decision into the adaptation history."""
+    return state_service.record_adaptation(state, response_service.log_event(decision, date.today()))
 
 
 def _snapshot(profile: dict[str, Any], assessment: dict[str, Any], recommendation: dict[str, Any],
@@ -297,21 +302,27 @@ def profile_options() -> dict[str, Any]:
 @router.post("/state/today", response_model=StateEnvelope)
 def state_today(payload: StateRequest) -> dict[str, Any]:
     profile, assessment, rec, _ = _state_context(payload.state)
-    return {"state": payload.state, "today": _today_payload(profile, assessment, rec)}
+    decision = _response_decision(profile, assessment, rec)
+    new_state = _record(payload.state, decision)
+    return {"state": new_state, "today": _today_payload(profile, assessment, rec, decision)}
 
 
 @router.post("/state/check-in", response_model=StateEnvelope)
 def state_check_in(payload: CheckInRequest2) -> dict[str, Any]:
     new_state = state_service.apply_check_in(payload.state, payload.check_in)
     profile, assessment, rec, _ = _state_context(new_state)
-    return {"state": new_state, "today": _today_payload(profile, assessment, rec)}
+    decision = _response_decision(profile, assessment, rec)
+    new_state = _record(new_state, decision)
+    return {"state": new_state, "today": _today_payload(profile, assessment, rec, decision)}
 
 
 @router.post("/state/profile", response_model=StateEnvelope)
 def state_profile(payload: ProfileEditRequest) -> dict[str, Any]:
     new_state = state_service.apply_profile_edits(payload.state, payload.edits.model_dump())
     profile, assessment, rec, _ = _state_context(new_state)
-    return {"state": new_state, "today": _today_payload(profile, assessment, rec)}
+    decision = _response_decision(profile, assessment, rec)
+    new_state = _record(new_state, decision)
+    return {"state": new_state, "today": _today_payload(profile, assessment, rec, decision)}
 
 
 @router.post("/state/session", response_model=SessionLogResponse)
@@ -346,10 +357,12 @@ def state_session(payload: SessionLogRequest) -> dict[str, Any]:
     new_state = state_service.upsert_session_overlay(new_state, str(session["session_id"]),
                                                      {"response_context": snapshot})
     updated_profile, updated_assessment, updated_rec, _ = _state_context(new_state)
+    updated_decision = _response_decision(updated_profile, updated_assessment, updated_rec)
+    new_state = _record(new_state, updated_decision)
     return {
         "state": new_state,
         "session": session,
-        "today": _today_payload(updated_profile, updated_assessment, updated_rec),
+        "today": _today_payload(updated_profile, updated_assessment, updated_rec, updated_decision),
         "exposure": training_service.exposure(updated_profile, updated_assessment, updated_rec),
         "history": training_service.recent_sessions(updated_profile, 8),
     }
@@ -360,7 +373,11 @@ def state_coach(payload: CoachStateRequest) -> dict[str, Any]:
     profile, assessment, rec, _ = _state_context(payload.state)
     # Personal Response facts are answered deterministically, so they never reach
     # the AI provider (the AI-01 grounding contract).
-    deterministic = response_service.answer_question(payload.question, _response_decision(profile, assessment, rec))
+    deterministic = response_service.answer_question(
+        payload.question,
+        _response_decision(profile, assessment, rec),
+        payload.state.adaptation_log,
+    )
     if deterministic:
         return coach_service.verified_answer(deterministic, "Answered from your recorded data. No model wording was used.")
     history = [{"role": turn.role, "content": turn.content} for turn in payload.history]
@@ -380,13 +397,16 @@ def state_feedback(payload: SessionFeedbackRequest) -> dict[str, Any]:
         }
     })
     profile, assessment, rec, _ = _state_context(new_state)
-    return {"state": new_state, "today": _today_payload(profile, assessment, rec)}
+    decision = _response_decision(profile, assessment, rec)
+    new_state = _record(new_state, decision)
+    return {"state": new_state, "today": _today_payload(profile, assessment, rec, decision)}
 
 
 @router.post("/state/personal-response", response_model=PersonalResponseResponse)
 def state_personal_response(payload: PersonalResponseRequest) -> dict[str, Any]:
     profile, assessment, rec, _ = _state_context(payload.state)
-    return response_service.payload(_response_decision(profile, assessment, rec))
+    decision = _response_decision(profile, assessment, rec)
+    return response_service.with_history(response_service.payload(decision), payload.state.adaptation_log)
 
 
 @router.get("/personal-response", response_model=PersonalResponseResponse)
@@ -399,7 +419,10 @@ def personal_response(profile_id: str | None = Query(default=None),
     if response_demo:
         state = state_service.seed_demo_responses(state, response_demo)
     full_profile, assessment, rec, _ = _state_context(state)
-    return response_service.payload(_response_decision(full_profile, assessment, rec))
+    decision = _response_decision(full_profile, assessment, rec)
+    # A demo profile has no stored log, so one synthetic event is shown for context.
+    return response_service.with_history(response_service.payload(decision),
+                                         [response_service.log_event(decision, date.today())])
 
 
 @router.post("/state/insights", response_model=InsightsResponse)
