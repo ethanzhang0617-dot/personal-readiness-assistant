@@ -30,6 +30,8 @@ Open <http://localhost:3000>.
 | Demo scenarios | Profile → Demo controls: three fixed simulated check-ins (well recovered / moderate fatigue / high load) plus the three demo profiles. |
 | Tests | `python3 -m pytest -v` (246 tests) and `cd frontend && pnpm lint && pnpm typecheck && pnpm build && pnpm check:store`. |
 
+| Third-party notices | The Train muscle visualisation uses the MIT-licensed [MuscleMap](https://github.com/Jsplice/MuscleMap) body assets — see `docs/THIRD_PARTY_NOTICES.md`. |
+
 V1.3 completes the loop on top of the same engines: an active session with **in-session
 calibration** (HOLD / EASE / OPTIONAL PUSH — bounded to the effort range already prescribed),
 post-session feedback, response episodes, the Personal Response Profile, qualitative

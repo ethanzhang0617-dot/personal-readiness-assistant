@@ -8,6 +8,15 @@ importers:
 
   .:
     dependencies:
+      '@musclemap/assets':
+        specifier: 1.1.0
+        version: 1.1.0
+      '@musclemap/core':
+        specifier: 1.1.0
+        version: 1.1.0
+      '@musclemap/react':
+        specifier: 1.1.0
+        version: 1.1.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       class-variance-authority:
         specifier: 0.7.1
         version: 0.7.1
@@ -381,6 +390,18 @@ packages:
 
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
+
+  '@musclemap/assets@1.1.0':
+    resolution: {integrity: sha512-Ms3Xb2DYcHf4wecfO5APtuSv6sTFal2tkqi4KcfU+LWVFWtUyxxXMHm8nPH+J1CMR2OCbu35RoJq2t5FCQngdQ==}
+
+  '@musclemap/core@1.1.0':
+    resolution: {integrity: sha512-KyJ4kquElR6DO5iFvnIht47mw72oi+Xim5CT6+7ku2+ynjL6y4M5lAWaR1szUB0PVsjBGgnfK+eOTKtgC47hLg==}
+
+  '@musclemap/react@1.1.0':
+    resolution: {integrity: sha512-o//ot4ds+lTUm5e0ZG2TY11j87QryTNNYN7A21Wp/Du4b4GnybE1Tivb4K4ml5uHu66fkerVPTbEN+IErenSPQ==}
+    peerDependencies:
+      react: ^18 || ^19
+      react-dom: ^18 || ^19
 
   '@napi-rs/wasm-runtime@1.2.4':
     resolution: {integrity: sha512-AJxoUD2/15ESHbvpcyjU274nsAPLuOtPHCk0vKJM5pj//Fg/B1FXNWjPnXTT9PymCYYiHo4zPj0ZomXBKhoy7g==}
@@ -2352,6 +2373,19 @@ snapshots:
     dependencies:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.6.0
+
+  '@musclemap/assets@1.1.0':
+    dependencies:
+      '@musclemap/core': 1.1.0
+
+  '@musclemap/core@1.1.0': {}
+
+  '@musclemap/react@1.1.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)':
+    dependencies:
+      '@musclemap/assets': 1.1.0
+      '@musclemap/core': 1.1.0
+      react: 19.3.0
+      react-dom: 19.3.0(react@19.3.0)
 
   '@napi-rs/wasm-runtime@1.2.4(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0)':
     dependencies:

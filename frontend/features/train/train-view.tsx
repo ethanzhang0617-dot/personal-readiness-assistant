@@ -6,7 +6,7 @@ import { useMemo, useState } from "react";
 
 import { ActiveSessionPanel } from "@/components/active-session";
 import { ExposureList } from "@/components/exposure-list";
-import { MuscleMap } from "@/components/muscle-map";
+import { MuscleFocusMap } from "@/components/muscle-focus-map";
 import { PageHeader } from "@/components/page-header";
 import { PostSessionFeedback } from "@/components/post-session-feedback";
 import { StatePanel } from "@/components/state-panel";
@@ -291,7 +291,7 @@ export function TrainView() {
             .join(" · ")}
         </p>
 
-        <MuscleMap groups={focusGroups} className="mt-4" />
+        <MuscleFocusMap groups={focusGroups} className="mt-5" />
 
         <Button
           size="lg"
