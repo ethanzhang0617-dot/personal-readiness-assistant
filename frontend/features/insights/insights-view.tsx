@@ -11,15 +11,14 @@ import {
   PersonalResponseProfilePanel,
   ResponseEpisodeList,
 } from "@/components/personal-response";
+import { Sparkline } from "@/components/sparkline";
 import { StatePanel } from "@/components/state-panel";
-import { StatusBadge } from "@/components/status-badge";
 import { TrendChart } from "@/components/trend-chart";
-import { Section } from "@/components/ui/section";
 import { Segmented } from "@/components/ui/segmented";
 import { Skeleton } from "@/components/ui/skeleton";
 import { calibrationLabel, calibrationTone } from "@/lib/calibration";
-import { formatNumber, formatShortDate } from "@/lib/format";
-import { asNumber, asString } from "@/lib/measurements";
+import { formatNumber, formatShortDate, statusHeadline } from "@/lib/format";
+import { asNumber } from "@/lib/measurements";
 import { useUserState } from "@/lib/state-provider";
 import type { InsightsResponse, PersonalResponse } from "@/types/api";
 import { cn } from "@/lib/utils";
@@ -30,10 +29,31 @@ const WINDOWS = [
   { value: 0, label: "All" },
 ];
 
-// Insights: four modules, one takeaway and one number each. Charts, episode
-// detail, coverage and the Personal Response profile are deliberate expands, so
-// the screen does not repeat what Train already owns (weekly exposure) and never
-// renders the same Personal Response content twice.
+// Insights: trend-first.
+//
+// Four visual modules — Readiness, Training, Personal response, Evidence — each
+// with one takeaway and one visual. Charts, episodes and coverage are deliberate
+// expands, and weekly exposure stays with Train where it belongs.
+
+/** Data-derived trends, never invented copy. */
+function readinessTrend(history: { index: number | null }[]): string | null {
+  const values = history.map((row) => row.index).filter((value): value is number => value !== null);
+  if (values.length < 3) return null;
+  const latest = values[0];
+  const mean = values.reduce((total, value) => total + value, 0) / values.length;
+  const delta = latest - mean;
+  if (delta >= 4) return "Trending up this week";
+  if (delta <= -4) return "Trending down this week";
+  return "Holding steady this week";
+}
+
+function loadTrend(recent: number | null, reference: number | null): string | null {
+  if (recent === null || reference === null || reference === 0) return null;
+  const ratio = (recent - reference) / reference;
+  if (ratio <= -0.12) return "Below your own 21-day reference";
+  if (ratio >= 0.12) return "Above your own 21-day reference";
+  return "In line with your own 21-day reference";
+}
 
 export function InsightsView() {
   const { ready, today, loadInsights, loadPersonalResponse } = useUserState();
@@ -72,10 +92,11 @@ export function InsightsView() {
 
   if (!ready || (!data && !error)) {
     return (
-      <div className="space-y-4">
-        <Skeleton className="h-6 w-32" />
-        <Skeleton className="h-24 w-full rounded-[var(--radius-card)]" />
-        <Skeleton className="h-32 w-full" />
+      <div className="space-y-5">
+        <Skeleton className="h-4 w-20" />
+        <Skeleton className="h-8 w-52" />
+        <Skeleton className="h-28 w-full rounded-[var(--radius-card)]" />
+        <Skeleton className="h-28 w-full rounded-[var(--radius-card)]" />
       </div>
     );
   }
@@ -83,31 +104,36 @@ export function InsightsView() {
     return (
       <StatePanel
         tone="error"
-        title="Insights are unavailable"
+        title="We couldn't load your insights"
         body={`${error ?? "No data was returned."} The rest of the product still works.`}
       />
     );
   }
 
   const load = data.load;
+  const recentLoad = asNumber(load.recent_7d_mean);
+  const referenceLoad = asNumber(load.reference_21d_mean);
   const loadSeries = data.series.find((series) => series.key === "session_load") ?? null;
   const signalSeries = data.series.filter((series) => series.key !== "session_load");
-  const confidence =
-    response?.confidence ?? today?.training.recommendation.recommendation_confidence ?? null;
-  const bands = response?.profile?.bands ?? [];
+  const readinessSeries = data.series.find((series) => series.key === "ln_rmssd") ?? null;
+  const confidence = response?.confidence ?? today?.training.recommendation.recommendation_confidence ?? null;
+  const bands = [...(response?.profile?.bands ?? [])].sort((a, b) => {
+    const order = ["High", "Moderate", "Low"];
+    const left = order.indexOf(a.band);
+    const right = order.indexOf(b.band);
+    return (left === -1 ? 99 : left) - (right === -1 ? 99 : right);
+  });
   const notableBand = bands.find((band) => band.observations > 0) ?? null;
   const patternLine = notableBand
-    ? `${notableBand.band} demand tends to be followed by ${notableBand.pattern.replace(/\.$/, "").toLowerCase()} responses.`
+    ? `${notableBand.band}-demand sessions tend to be followed by ${notableBand.pattern.replace(/\.$/, "").toLowerCase()} responses.`
     : (response?.detail ?? "No completed response episodes yet — log a session, add feedback and check in the next morning.");
   const relevantSessions = confidence?.relevant_episodes ?? response?.relevant_episodes ?? null;
+  const trend = readinessTrend(data.readiness_history);
+  const loadLine = loadTrend(recentLoad, referenceLoad);
 
   return (
-    <div className="space-y-6">
-      <PageHeader
-        eyebrow="Insights"
-        title="Your week in context"
-        description="Your own recorded signals. Days without a check-in stay gaps."
-      />
+    <div className="space-y-7">
+      <PageHeader eyebrow="Insights" title="Your week in context" />
 
       <Segmented
         options={WINDOWS}
@@ -122,82 +148,38 @@ export function InsightsView() {
         }}
       />
 
-      {/* 1 — Readiness */}
-      <Section title="Readiness" divided={false}>
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="title-metric">
-              {today?.readiness.index ?? "—"}
-              <span className="ml-1 text-[0.72rem] font-normal text-muted">
-                {today?.readiness.status_label ?? ""}
-              </span>
-            </p>
-            <p className="mt-1 text-[0.8rem] leading-relaxed text-muted">
-              {today?.readiness.contributors?.[0] ?? today?.readiness.explanation ?? "No readiness detail for today."}
-            </p>
-          </div>
-          {today ? <StatusBadge status={today.readiness.status} /> : null}
+      {/* Readiness */}
+      <section>
+        <div className="flex items-baseline justify-between gap-3">
+          <h2 className="title-section">Readiness</h2>
+          <Link href="/readiness" className="text-[0.78rem] font-medium text-accent">
+            View →
+          </Link>
         </div>
-
-        <details className="group mt-3">
-          <summary className="flex min-h-10 cursor-pointer list-none items-center gap-1 text-[0.78rem] font-medium text-muted">
-            Readiness history
-            <span className="transition-transform group-open:rotate-90" aria-hidden>
-              ›
-            </span>
-          </summary>
-          <div className="pt-2">
-            {data.readiness_history.length > 0 ? (
-              <ul className="divide-y divide-subtle border-y border-subtle">
-                {data.readiness_history.slice(0, 10).map((row) => (
-                  <li key={row.date} className="flex min-h-11 items-center justify-between gap-3">
-                    <span className="text-[0.8rem]">{formatShortDate(row.date)}</span>
-                    <span className="flex items-center gap-3">
-                      <span className="text-[0.72rem] text-muted">Index {row.index ?? "—"}</span>
-                      {row.status ? <StatusBadge status={row.status} /> : null}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-[0.78rem] leading-relaxed text-muted">
-                No readiness assessments stored yet. {data.available_check_ins} check-ins are available for the charts
-                below; saving a check-in records an assessment.
-              </p>
-            )}
-            <Link
-              href="/readiness"
-              className="mt-2 flex min-h-10 items-center text-[0.78rem] font-medium text-muted"
-            >
-              View readiness →
-            </Link>
+        <p className="mt-2 text-[0.95rem] font-semibold">
+          {trend ?? statusHeadline(today?.readiness.status ?? "INSUFFICIENT DATA")}
+        </p>
+        <p className="mt-1 text-[0.8rem] text-muted">
+          Index {today?.readiness.index ?? "—"} · {statusHeadline(today?.readiness.status ?? "")}
+        </p>
+        {readinessSeries ? (
+          <div className="mt-3">
+            <Sparkline points={readinessSeries.points} />
           </div>
-        </details>
-      </Section>
+        ) : null}
+      </section>
 
-      {/* 2 — Training */}
-      <Section title="Training">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="title-metric">
-              {formatNumber(asNumber(load.recent_7d_mean))}
-              <span className="ml-1.5 text-[0.75rem] font-normal text-muted">pts last 7 days</span>
-            </p>
-            <p className="mt-1 text-[0.78rem] text-muted">
-              21-day reference {formatNumber(asNumber(load.reference_21d_mean))} pts
-            </p>
-          </div>
-          {asString(load.status) ? <StatusBadge status={asString(load.status) as string} /> : null}
-        </div>
-
+      {/* Training */}
+      <section className="divider pt-6">
+        <h2 className="title-section">Training</h2>
+        <p className="title-metric mt-2">
+          {formatNumber(recentLoad)}
+          <span className="ml-1.5 text-[0.78rem] font-normal text-muted">pts · last 7 days</span>
+        </p>
+        {loadLine ? <p className="mt-1 text-[0.8rem] text-muted">{loadLine}</p> : null}
         {loadSeries ? (
           <div className="mt-3">
-            <TrendChart
-              points={loadSeries.points}
-              baseline={loadSeries.baseline}
-              unit={loadSeries.unit}
-              label={loadSeries.label}
-            />
+            <Sparkline points={loadSeries.points} />
           </div>
         ) : null}
 
@@ -208,35 +190,35 @@ export function InsightsView() {
               ›
             </span>
           </summary>
-          <div className="pt-2">
-            <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-[0.75rem]">
+          <div className="pt-3">
+            <dl className="grid grid-cols-2 gap-x-4 gap-y-3">
               <div>
-                <dt className="text-muted">Calendar coverage</dt>
-                <dd className="font-medium tabular-nums">
-                  {String(load.calendar_days_covered ?? "—")}/{String(load.calendar_days_required ?? "—")} days
-                </dd>
+                <dt className="text-[0.72rem] text-muted">21-day reference</dt>
+                <dd className="mt-0.5 text-[0.85rem] font-medium tabular-nums">{formatNumber(referenceLoad)} pts</dd>
               </div>
               <div>
-                <dt className="text-muted">Sessions, last 14 days</dt>
-                <dd className="font-medium tabular-nums">{data.sessions_last_14_days}</dd>
-              </div>
-              <div>
-                <dt className="text-muted">Data sufficiency</dt>
-                <dd className="font-medium">{asString(load.data_sufficiency) ?? "—"}</dd>
+                <dt className="text-[0.72rem] text-muted">Sessions, last 14 days</dt>
+                <dd className="mt-0.5 text-[0.85rem] font-medium tabular-nums">{data.sessions_last_14_days}</dd>
               </div>
             </dl>
-            <p className="mt-3 text-[0.7rem] leading-relaxed text-muted">
+            <p className="mt-3 text-[0.72rem] leading-relaxed text-muted">
               Training Load Points are calculated from session duration × session RPE. They are relative workload
               units for comparing training stress over time — not kilograms, calories or an absolute physiological
               measurement.
             </p>
           </div>
         </details>
-      </Section>
+      </section>
 
-      {/* 3 — Personal response */}
-      <Section title="Personal response">
-        <p className="text-[0.86rem] leading-relaxed">{patternLine}</p>
+      {/* Personal response */}
+      <section className="divider pt-6">
+        <div className="flex items-baseline justify-between gap-3">
+          <h2 className="title-section">Personal response</h2>
+          <Link href="/personal-response" className="text-[0.78rem] font-medium text-accent">
+            View Personal Response →
+          </Link>
+        </div>
+        <p className="mt-2 text-[0.88rem] leading-relaxed">{patternLine}</p>
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <ConfidenceBadge confidence={confidence} />
           {relevantSessions !== null ? (
@@ -246,58 +228,62 @@ export function InsightsView() {
           ) : null}
         </div>
 
-        <ul className="mt-4 divide-y divide-subtle border-y border-subtle">
+        <ul className="mt-4">
           {(bands.length > 0 ? bands : []).map((band) => (
-            <li key={band.band} className="flex items-start justify-between gap-3 py-3">
-              <div className="min-w-0">
-                <p className="text-[0.82rem] font-semibold">{band.band} demand</p>
-                <p className="mt-0.5 text-[0.78rem]">{band.pattern}</p>
-                <p className="mt-0.5 text-[0.7rem] text-muted">
-                  {band.observations > 0
-                    ? `${band.observations} relevant session${band.observations === 1 ? "" : "s"}`
-                    : "Not enough data"}
-                </p>
-              </div>
-              {band.observations === 0 ? (
-                <span className="shrink-0 rounded-full bg-surface-muted px-2 py-0.5 text-[0.62rem] font-semibold text-muted">
-                  No data
-                </span>
-              ) : null}
+            <li key={band.band} className="hairline flex items-center justify-between gap-3 py-3 last:border-b-0">
+              <span
+                className="shrink-0 rounded-full px-2.5 py-1 text-[0.68rem] font-semibold"
+                style={{
+                  backgroundColor:
+                    band.observations === 0
+                      ? "var(--surface-secondary)"
+                      : band.pattern.toLowerCase().includes("poorer")
+                        ? "var(--status-red-soft)"
+                        : band.pattern.toLowerCase().includes("better")
+                          ? "var(--status-green-soft)"
+                          : "var(--accent-soft)",
+                  color:
+                    band.observations === 0
+                      ? "var(--text-muted)"
+                      : band.pattern.toLowerCase().includes("poorer")
+                        ? "var(--status-red)"
+                        : band.pattern.toLowerCase().includes("better")
+                          ? "var(--status-green)"
+                          : "var(--accent-primary)",
+                }}
+              >
+                {band.band}
+              </span>
+              <span className="min-w-0 flex-1 truncate text-[0.84rem]">{band.pattern}</span>
+              <span className="shrink-0 text-[0.74rem] text-muted">
+                {band.observations > 0 ? `${band.observations} sessions` : "No data"}
+              </span>
             </li>
           ))}
-          {bands.length === 0 ? (
-            <li className="py-3 text-[0.8rem] text-muted">No demand bands recorded yet.</li>
-          ) : null}
         </ul>
 
-        <details className="group mt-3">
+        <details id="personal-response" className="group mt-3">
           <summary className="flex min-h-10 cursor-pointer list-none items-center gap-1 text-[0.78rem] font-medium text-muted">
             Response detail
             <span className="transition-transform group-open:rotate-90" aria-hidden>
               ›
             </span>
           </summary>
-          <div className="space-y-5 pt-3">
+          <div className="space-y-5 pt-4">
             {response ? (
               <>
                 <PersonalResponseProfilePanel profile={response.profile} />
                 <div>
-                  <p className="label-quiet">Evidence coverage</p>
-                  <div className="mt-2">
-                    <EvidenceCoveragePanel coverage={response.coverage} />
-                  </div>
+                  <p className="label-quiet mb-2">Evidence coverage</p>
+                  <EvidenceCoveragePanel coverage={response.coverage} />
                 </div>
                 <div>
-                  <p className="label-quiet">Recent response episodes</p>
-                  <div className="mt-2">
-                    <ResponseEpisodeList episodes={response.episodes} />
-                  </div>
+                  <p className="label-quiet mb-2">Recent response episodes</p>
+                  <ResponseEpisodeList episodes={response.episodes} />
                 </div>
                 <div>
-                  <p className="label-quiet">Adaptation history</p>
-                  <div className="mt-2">
-                    <AdaptationHistoryList history={response.adaptation_history} />
-                  </div>
+                  <p className="label-quiet mb-2">Adaptation history</p>
+                  <AdaptationHistoryList history={response.adaptation_history} />
                 </div>
               </>
             ) : (
@@ -306,49 +292,47 @@ export function InsightsView() {
 
             {(today?.calibration?.summary.total ?? 0) > 0 ? (
               <div>
-                <p className="label-quiet">In-session calibration</p>
-                <div className="mt-2 space-y-2">
-                  <p className="text-[0.78rem]">{today?.calibration?.summary.trend}</p>
-                  <ul className="divide-y divide-subtle border-y border-subtle">
-                    {(today?.calibration?.history ?? []).slice(-5).reverse().map((row) => (
-                      <li
-                        key={`${row.recorded_at}-${row.session_id ?? ""}`}
-                        className="flex items-start justify-between gap-3 py-2.5"
+                <p className="label-quiet mb-2">In-session calibration</p>
+                <p className="text-[0.8rem]">{today?.calibration?.summary.trend}</p>
+                <ul>
+                  {(today?.calibration?.history ?? []).slice(-5).reverse().map((row) => (
+                    <li
+                      key={`${row.recorded_at}-${row.session_id ?? ""}`}
+                      className="hairline flex items-start justify-between gap-3 py-2.5 last:border-b-0"
+                    >
+                      <span className="min-w-0">
+                        <span className="block text-[0.8rem] font-medium">{formatShortDate(row.date)}</span>
+                        <span className="block text-[0.72rem] text-muted">
+                          {row.focus ?? "Session"} · {row.effort ?? "—"}
+                          {row.actual_rir !== null && row.actual_rir !== undefined ? ` · ${row.actual_rir} RIR` : ""}
+                        </span>
+                      </span>
+                      <span
+                        className={cn(
+                          "shrink-0 rounded-full px-2 py-0.5 text-[0.64rem] font-semibold",
+                          calibrationTone(row.result),
+                        )}
                       >
-                        <span className="min-w-0">
-                          <span className="block text-[0.78rem] font-medium">{formatShortDate(row.date)}</span>
-                          <span className="block text-[0.7rem] text-muted">
-                            {row.focus ?? "Session"} · {row.effort ?? "—"}
-                            {row.actual_rir !== null && row.actual_rir !== undefined ? ` · ${row.actual_rir} RIR` : ""}
-                          </span>
-                        </span>
-                        <span
-                          className={cn(
-                            "shrink-0 rounded-full px-2 py-0.5 text-[0.62rem] font-semibold",
-                            calibrationTone(row.result),
-                          )}
-                        >
-                          {calibrationLabel(row.result)}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
+                        {calibrationLabel(row.result)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
               </div>
             ) : null}
           </div>
         </details>
-      </Section>
+      </section>
 
-      {/* 4 — Evidence */}
-      <Section title="Evidence">
-        <p className="title-metric">{confidence?.state ?? "—"}</p>
+      {/* Evidence */}
+      <section className="divider pt-6">
+        <h2 className="title-section">Evidence</h2>
+        <p className="mt-2 text-[1.1rem] font-semibold">{confidence?.state ?? "—"}</p>
         <p className="mt-1 text-[0.8rem] text-muted">
           {relevantSessions !== null
             ? `Based on ${relevantSessions} relevant session${relevantSessions === 1 ? "" : "s"}`
             : "Personal evidence is still accumulating."}
         </p>
-
         <details className="group mt-3">
           <summary className="flex min-h-10 cursor-pointer list-none items-center gap-1 text-[0.78rem] font-medium text-muted">
             How this is calculated →
@@ -356,35 +340,33 @@ export function InsightsView() {
               ›
             </span>
           </summary>
-          <div className="space-y-2 pt-2">
-            <p className="text-[0.78rem] leading-relaxed">{confidence?.explanation ?? "—"}</p>
-            {confidence?.note ? (
-              <p className="text-[0.72rem] leading-relaxed text-muted">{confidence.note}</p>
-            ) : null}
+          <div className="space-y-2 pt-3">
+            <p className="text-[0.8rem] leading-relaxed">{confidence?.explanation ?? "—"}</p>
+            {confidence?.note ? <p className="text-[0.74rem] leading-relaxed text-muted">{confidence.note}</p> : null}
           </div>
         </details>
-      </Section>
+      </section>
 
-      {/* Signals — every chart, behind one expand. */}
-      <details className="divider group pt-4">
-        <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 text-[0.88rem] font-semibold">
+      {/* Every chart, behind one expand. */}
+      <details className="divider group pt-6">
+        <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 text-[0.9rem] font-semibold">
           All signals
-          <span className="text-[0.72rem] font-normal text-muted">{signalSeries.length} charts</span>
+          <span className="text-[0.74rem] font-normal text-muted">{signalSeries.length} charts</span>
         </summary>
-        <div className="pt-3">
-          <p className="mb-3 text-[0.74rem] leading-relaxed text-muted">{data.missing_data_note}</p>
-          <div className="grid gap-5 md:grid-cols-2">
+        <div className="pt-4">
+          <p className="mb-4 text-[0.76rem] leading-relaxed text-muted">{data.missing_data_note}</p>
+          <div className="grid gap-6 md:grid-cols-2">
             {signalSeries.map((series) => (
               <div key={series.key}>
                 <div className="flex items-baseline justify-between gap-3">
-                  <p className="text-[0.82rem] font-semibold">{series.label}</p>
-                  <p className="text-[0.8rem] font-semibold tabular-nums">
+                  <p className="text-[0.84rem] font-semibold">{series.label}</p>
+                  <p className="text-[0.84rem] font-semibold tabular-nums">
                     {formatNumber(series.latest)}
-                    <span className="ml-1 text-[0.68rem] font-normal text-muted">{series.unit}</span>
+                    <span className="ml-1 text-[0.7rem] font-normal text-muted">{series.unit}</span>
                   </p>
                 </div>
                 {series.baseline !== null ? (
-                  <p className="mt-0.5 text-[0.68rem] text-muted">Baseline mean {formatNumber(series.baseline)}</p>
+                  <p className="mt-0.5 text-[0.7rem] text-muted">Baseline mean {formatNumber(series.baseline)}</p>
                 ) : null}
                 <div className="mt-2">
                   <TrendChart
@@ -400,9 +382,9 @@ export function InsightsView() {
         </div>
       </details>
 
-      <p className="text-[0.72rem] leading-relaxed text-muted">
+      <p className="text-[0.74rem] leading-relaxed text-muted">
         Weekly exposure is maintained on{" "}
-        <Link href="/train" className="font-medium text-foreground underline decoration-dotted underline-offset-2">
+        <Link href="/train" className="font-medium text-accent underline decoration-dotted underline-offset-2">
           Train
         </Link>
         , where it belongs with the session.

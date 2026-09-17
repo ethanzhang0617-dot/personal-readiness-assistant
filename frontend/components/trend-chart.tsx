@@ -32,7 +32,7 @@ export function TrendChart({ points, baseline = null, unit = "", label }: TrendC
 
   if (values.length < 2) {
     return (
-      <div className="flex h-28 items-center justify-center rounded-[var(--radius-control)] border border-dashed border-subtle text-[0.75rem] text-muted">
+      <div className="flex h-28 items-center justify-center rounded-[var(--radius-control)] bg-surface-muted text-[0.78rem] text-muted">
         Not enough recorded data yet — check in for a few more days.
       </div>
     );
@@ -106,10 +106,10 @@ export function TrendChart({ points, baseline = null, unit = "", label }: TrendC
                 x2={WIDTH - PAD_RIGHT}
                 y1={y(tick)}
                 y2={y(tick)}
-                stroke="var(--color-subtle)"
+                stroke="var(--chart-grid)"
                 strokeWidth={1}
               />
-              <text x={0} y={y(tick) + 3} fontSize={9} fill="var(--color-muted)">
+              <text x={0} y={y(tick) + 3} fontSize={9} fill="var(--text-muted)">
                 {tick.toFixed(tick >= 100 ? 0 : 1)}
               </text>
             </g>
@@ -121,7 +121,7 @@ export function TrendChart({ points, baseline = null, unit = "", label }: TrendC
               x2={WIDTH - PAD_RIGHT}
               y1={y(baseline)}
               y2={y(baseline)}
-              stroke="var(--color-muted)"
+              stroke="var(--chart-baseline)"
               strokeWidth={1}
               strokeDasharray="2 3"
               opacity={0.55}
@@ -129,11 +129,11 @@ export function TrendChart({ points, baseline = null, unit = "", label }: TrendC
           ) : null}
 
           {meanPath ? (
-            <path d={`M${meanPath}`} fill="none" stroke="var(--color-muted)" strokeWidth={1.5} strokeDasharray="5 4" />
+            <path d={`M${meanPath}`} fill="none" stroke="var(--chart-mean)" strokeWidth={1.5} strokeDasharray="5 4" />
           ) : null}
 
           {segments.map((path) => (
-            <path key={path} d={path} fill="none" stroke="var(--color-primary)" strokeWidth={2} strokeLinecap="round" />
+            <path key={path} d={path} fill="none" stroke="var(--chart-line)" strokeWidth={2} strokeLinecap="round" />
           ))}
 
           {active !== null && shown?.value !== null && shown?.value !== undefined ? (
@@ -143,16 +143,16 @@ export function TrendChart({ points, baseline = null, unit = "", label }: TrendC
                 x2={x(active)}
                 y1={PAD_TOP}
                 y2={HEIGHT - PAD_BOTTOM}
-                stroke="var(--color-muted)"
+                stroke="var(--chart-mean)"
                 strokeWidth={1}
                 opacity={0.5}
               />
-              <circle cx={x(active)} cy={y(shown.value)} r={3.5} fill="var(--color-primary)" />
+              <circle cx={x(active)} cy={y(shown.value)} r={3.5} fill="var(--chart-line)" />
             </>
           ) : null}
         </svg>
 
-        <div className="mt-1 flex items-center justify-between text-[0.66rem] text-muted">
+        <div className="mt-1.5 flex items-center justify-between text-[0.68rem] text-muted">
           <span>{formatShortDate(points[0]?.date)}</span>
           <span aria-live="polite">
             {shown ? (

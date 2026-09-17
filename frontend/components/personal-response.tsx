@@ -56,7 +56,7 @@ export function PersonalResponseProfilePanel({ profile }: { profile?: PersonalRe
   if (!profile) return null;
   return (
     <div className="space-y-4">
-      <ul className="divide-y divide-subtle border-y border-subtle">
+      <ul className="hairline-list">
         {profile.bands.map((band) => (
           <li key={band.band} className="flex items-start justify-between gap-3 py-3">
             <div className="min-w-0">
@@ -159,7 +159,7 @@ export function AdaptationHistoryList({ history = [] }: { history?: AdaptationEv
     );
   }
   return (
-    <ul className="divide-y divide-subtle border-y border-subtle">
+    <ul className="hairline-list">
       {history.map((row) => (
         <li key={`${row.date}-${row.recorded_at}`} className="py-3">
           <div className="flex items-start justify-between gap-3">
@@ -203,7 +203,7 @@ export function PersonalResponseSummary({ response }: { response: PersonalRespon
       </dl>
 
       {confidence ? (
-        <div className="flex items-start justify-between gap-3 border-t border-subtle pt-3">
+        <div className="flex items-start justify-between gap-3 divider pt-3">
           <div className="min-w-0">
             <p className="eyebrow">Recommendation confidence</p>
             <p className="mt-1 text-[0.78rem] leading-relaxed">{confidence.explanation}</p>
@@ -340,7 +340,7 @@ export function ResponseEpisodeList({ episodes, limit = 8 }: { episodes: Respons
     );
   }
   return (
-    <div className="border-t border-subtle">
+    <div className="divider">
       {episodes.slice(0, limit).map((episode) => (
         <EpisodeRow key={episode.session_id} episode={episode} />
       ))}
