@@ -1,0 +1,33 @@
+# Render Blueprint for the V1.3 FastAPI backend.
+#
+# The frontend is deployed separately (Vercel) and calls this service over HTTPS.
+# Deployment is configuration only: no product code, engine or rule is changed by
+# hosting. The API is stateless, holds no personal data and owns the only secret
+# (an optional DeepSeek key, used solely for explanation questions).
+#
+# Create it from the Render dashboard: New + -> Blueprint -> pick this repo.
+
+services:
+  - type: web
+    name: personal-readiness-assistant-api
+    runtime: python
+    plan: free
+    rootDir: .
+    buildCommand: pip install -r requirements.txt
+    # The API needs no database, no disk and no background worker.
+    startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.6"
+      # Comma-separated exact browser origins allowed by CORS. Set this to the
+      # deployed frontend origin (for example https://your-app.vercel.app).
+      # It is deliberately NOT a wildcard.
+      - key: ARA_FRONTEND_ORIGINS
+        sync: false
+      # Optional: only enables AI explanations. Without it the product works and
+      # explanation questions fall back to the deterministic answer. Never set
+      # this on the frontend.
+      - key: DEEPSEEK_API_KEY
+        sync: false

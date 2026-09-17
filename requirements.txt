@@ -1,3 +1,19 @@
+# One file, two deployments.
+#
+# * The V1.3 product is the FastAPI backend (bottom block). Backend hosts such as
+#   Render/Railway/Fly read this file; without FastAPI and uvicorn it cannot start.
+# * The legacy Streamlit reference app (top block) still runs from the same file
+#   and is unaffected by the additional packages.
+#
+# FastAPI/uvicorn are the API layer, implemented behind the existing deterministic
+# engines. They are pinned to ranges, not exact versions, so a host can resolve a
+# current release.
+
+# --- API layer (V1.3 product) ---
+fastapi>=0.110,<1
+uvicorn>=0.30,<1
+
+# --- Legacy Streamlit reference app ---
 streamlit>=1.42,<2
 pandas>=2.2,<3
 numpy>=1.26,<3

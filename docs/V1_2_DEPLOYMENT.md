@@ -110,8 +110,9 @@ Android device — see `docs/V1_2_RELEASE_QA.md`.
 
 Requirements for any host:
 
-1. **Python 3.11+** with the repository requirements installed (`streamlit`, `pandas`, `numpy`,
-   `requests`; FastAPI/uvicorn are used by the API layer).
+1. **Python 3.11+** with `requirements.txt` installed. It now contains both the API layer
+   (`fastapi`, `uvicorn`) and the legacy Streamlit app's packages (`streamlit`, `pandas`,
+   `numpy`, `requests`), so a host can start the backend from the repository as-is.
 2. **Node 20.9+** and pnpm for the frontend build.
 3. The API process needs outbound HTTPS to the provider endpoint when AI explanations are enabled,
    and no inbound access other than the frontend.
@@ -149,3 +150,42 @@ These host names are examples only; no provider is required by the codebase.
 No database, no accounts, no authentication, no wearable integrations, no cloud sync and no
 server-side persistence of personal data. Adding any of those is a product decision, not a
 deployment detail.
+
+## 8. Final V1.3 deployment (the exact steps)
+
+The V1.3 product is the **Next.js frontend + FastAPI backend**. Streamlit is the legacy
+reference app and is not part of this deployment. Both hosts below read the same repository;
+the only committed deployment files are `requirements.txt` and `render.yaml`.
+
+Deploy in this order, because the frontend needs the API URL and the API needs the frontend
+origin:
+
+1. **Backend — Render (Blueprint)**
+   * Dashboard → **New +** → **Blueprint** → select this repository.
+   * Render reads `render.yaml`: `pip install -r requirements.txt` →
+     `uvicorn backend.main:app --host 0.0.0.0 --port $PORT`, health check `/api/health`.
+   * When prompted, set `ARA_FRONTEND_ORIGINS` to the frontend origin from step 2. Set
+     `DEEPSEEK_API_KEY` only if AI explanations should be enabled — it stays server-side
+     and is never given a `NEXT_PUBLIC_` prefix.
+   * Confirm `https://<service>.onrender.com/api/health` returns `200`.
+
+2. **Frontend — Vercel**
+   * Dashboard → **Add New…** → **Project** → import this repository.
+   * **Root Directory: `frontend`** (the app is in a subdirectory; leave the framework
+     preset as Next.js and let Vercel use `pnpm-lock.yaml`).
+   * Environment variable (Production): `NEXT_PUBLIC_API_BASE_URL = https://<service>.onrender.com`
+     — set it **before** the build, because `NEXT_PUBLIC_*` values are inlined at build time.
+   * Deploy, then copy the resulting `https://<project>.vercel.app` origin back into the
+     backend's `ARA_FRONTEND_ORIGINS` and let Render redeploy. Without this the browser
+     request is blocked by CORS.
+
+3. **Verify the public URL** — Today, morning check-in, Decision Trace, Decision Explorer,
+   Train → Start session → in-session calibration → complete → feedback, Insights, Coach,
+   Profile, Science & Logic. Then repeat at 390 × 844.
+
+Notes:
+
+* The API is stateless and writes nothing, so the free tier's spin-down after inactivity is
+  acceptable: the first request wakes it and the browser keeps all personal data locally.
+* Nothing about hosting changes a readiness threshold, a recommendation, an adaptation rule,
+  calibration or the science copy. `ARA_FRONTEND_ORIGINS` is an allow-list, never `*`.
