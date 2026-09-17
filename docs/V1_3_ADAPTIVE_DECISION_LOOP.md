@@ -1,13 +1,16 @@
 # V1.3 — Adaptive Decision Loop
 
 **Branch:** `v1.3-adaptive-decision-loop` (from the V1.2 RC `7d21568`)
-**Status:** Phase 1 pushed (`673010f`). Phase 2 local, not pushed. No machine learning,
-no new data sources, no numeric confidence score.
+**Status:** V1.3 complete. Phase 1 (`673010f`) and Phase 2 (`e09a88b`) are on GitHub; the
+finalisation sprint (in-session calibration + decision explorer) is the last V1.3 work.
+No machine learning, no new data sources, no numeric confidence score.
 
 * Phase 1 — Personal Response foundation: episodes, evidence states, bounded adjustment.
 * Phase 2 — Personal Response Profile, Recommendation Confidence, evidence coverage,
   consistency, recency, adaptation history and an honest resolution of the previously
   unreachable upward-adaptation path.
+* Final sprint — **In-session Calibration** (§21–§27) and the **What-if / Decision
+  Explorer** (§28–§31), which complete the loop described in §32.
 
 The Phase 1 sections below are kept because Phase 2 builds on them rather than
 replacing them; where Phase 2 changed a rule, the change is stated explicitly.
@@ -170,8 +173,13 @@ refuse a newer envelope. Adding the field with a `[]` default is lossless in bot
 directions: an older build ignores it, a newer build defaults it. V1.2 and V1.3 Phase 1
 data survive untouched.
 
-`pnpm check:store` runs 14 migration assertions (data preserved, normalisation, the
-adaptation-log defaults, refusal paths, partially damaged input).
+**Final-sprint decision:** the same reasoning applies to `active_session` (default `null`)
+and to the per-session `response_calibration` key (default `null`). Still **v3**, still no
+reset, still no rewrite.
+
+`pnpm check:store` runs 17 migration assertions (data preserved, normalisation, the
+adaptation-log defaults, an unfinished session + checkpoint surviving a reload, legacy
+episodes without a checkpoint, refusal paths, partially damaged input).
 
 ## 10. API
 
@@ -181,6 +189,11 @@ adaptation-log defaults, refusal paths, partially damaged input).
 | `POST /api/state/personal-response` | Personal Response payload for the client's own state |
 | `GET /api/personal-response` | read-only payload for a demo profile (`response_demo=` selects a case) |
 | `GET /api/state/base?response_demo=` | seeds one of the four documented demo response histories |
+| `POST /api/state/session/start` | open the active session with the guidance the product prescribes now |
+| `POST /api/state/session/cancel` | discard the active session without logging anything |
+| `POST /api/state/session/calibration` | resolve one checkpoint into HOLD / EASE / OPTIONAL PUSH |
+| `GET /api/decision-explorer` | the what-if levers and the "not a prediction" note |
+| `POST /api/state/what-if` | one-factor comparison; returns **no state** |
 
 Today's payload now carries `base_session_demand`, the final `session_demand`, the
 `personal_response` block, `recommendation_confidence` on the recommendation, a
@@ -334,6 +347,150 @@ Response reasoning, but only structured verified facts are sent, and the existin
 grounding guard contracts stay in force — no invented confidence state, episode count,
 response pattern or training history.
 
+## 21. In-session calibration (final sprint)
+
+The product already knew *what* to do before training and *how you responded* after it.
+The checkpoint adds the missing middle: **during** the session, does the actual response
+still match the planned guidance?
+
+A session becomes an explicit **active session** when the user starts it on Train. The
+active session carries the starting plan (session, how hard, effort guidance, duration)
+and is stored in the browser, so a reload keeps both the session and any checkpoint.
+
+One optional checkpoint, asked once. It never repeats the morning questions:
+
+| Asked | Never asked again |
+|---|---|
+| Effort compared with expectation (easier / as expected / harder) | sleep |
+| Actual RIR on a representative set (0–5, or "not sure") | HRV |
+| Performance feeling (better / as expected / worse) | stress |
+| — | motivation |
+
+## 22. The calibration rule
+
+Transparent, deterministic and bounded to three outcomes:
+
+| Outcome | When |
+|---|---|
+| **HOLD** | the checkpoint matched the plan |
+| **EASE** | a safety flag is active, **or** local soreness is at/above 4/5, **or** the reported RIR is below the prescribed range, **or** performance felt worse than expected |
+| **OPTIONAL PUSH** | readiness GREEN **and** no block **and** easier than expected **and** the reported RIR is above the prescribed ceiling **and** performance at least as expected |
+
+One nuance is deliberate: reporting the session as merely *harder than expected* while the
+RIR and performance stayed at plan is **one hard moment, not a divergence**, so it holds.
+The brief's own example (harder than expected *and* closer to failure than planned) eases
+via the RIR condition.
+
+Effort wording is parsed from the product's own string (`1–3 RIR`, `2–4 RIR; avoid
+unnecessary failure`). **The unit is mandatory**: the aerobic path prescribes `RPE 3–4 /
+10`, and a bare number range must never be mistaken for reps in reserve.
+
+## 23. What calibration may never do
+
+| Never | Why |
+|---|---|
+| raise or lower the demand **tier** (`Moderate → High`, `Low → Moderate`) | the tier is readiness's decision, and Phase 1/2 already showed the upward move is unreachable |
+| change the training focus, programme, exercise list or set count | calibration is about effort, not about what to train |
+| raise a weekly target or add volume | outside the loop the product can defend |
+| override safety, soreness or exposure | those keep precedence |
+| invent new precision | no new thresholds, no percentages |
+
+The published scope string is literally
+`Within the effort range already prescribed — no tier, focus, exercise or volume change`.
+
+## 24. Session trace
+
+The active session has its own causal chain, kept separate from the pre-session Decision
+Trace on Today:
+
+```
+PRE-SESSION DECISION → PERSONAL RESPONSE → STARTING GUIDANCE
+→ IN-SESSION OBSERVATION → CALIBRATION → FINAL SESSION GUIDANCE
+```
+
+## 25. Response Episode integration
+
+An episode now describes **BEFORE → RECOMMENDED → CALIBRATED → PERFORMED →
+POST-SESSION → AFTER**. `calibrated` is `null` for every episode logged without a
+checkpoint: older episodes stay valid and **no stored data is rewritten**.
+
+## 26. Calibration does not shortcut the learning loop
+
+A checkpoint never updates Personal Response directly. The learning layer still only
+counts a **complete** episode: feedback **and** a following next-day check-in. The
+closed-loop evidence contract from Phase 1 is unchanged.
+
+## 27. Calibration history and Coach facts
+
+One event is stored per checkpoint on the session itself (`response_calibration`), kept
+minimal: date, session/focus, starting guidance, effort, actual RIR, performance, result,
+reason, updated guidance. Insights shows the last few with a plain-language trend.
+
+Deterministic answers, **zero provider calls**:
+
+* *What is my calibration today?*
+* *Have I often needed to ease off recently?*
+* *What RIR did I just record?*
+* *Why did you tell me to ease off?*
+
+The documented Chinese phrasings (「我今天的 calibration 是什么？」「我最近经常需要在训练中降低
+强度吗？」「刚才记录的 RIR 是多少？」「刚才为什么让我降低一点强度？」) route to the same
+deterministic answers. The product copy itself remains English-only.
+
+## 28. What-if / Decision Explorer (final sprint)
+
+A small rule explorer that answers one question: **"Under the current rules, if this one
+condition were different, what would the product decide?"**
+
+It is **not** a second recommendation model and **not** a predictor. The alternative is
+produced by the *same* engines (`readiness_engine` → `training_recommendation_engine` →
+`adaptive_response`) with exactly one input changed.
+
+## 29. Supported levers
+
+| Lever | The one input it changes |
+|---|---|
+| More local soreness | one muscle group raised to 4/5 |
+| A poorer recovery night | −1.5 h sleep, lower HRV, higher fatigue |
+| No recent poorer-response history | the recorded response episodes are ignored |
+
+One change at a time; the current decision stays visible next to the alternative.
+
+## 30. Read-only by construction
+
+`POST /api/state/what-if` returns **no state**, so a simulation cannot be persisted. It
+never changes the profile, check-ins, training history, Response Episodes, Personal
+Response or the adaptation history. Every comparison is computed on deep copies.
+
+Worked examples (both reachable through the real rules):
+
+| Current | Change | Alternative |
+|---|---|---|
+| High demand, Back + Biceps | higher local soreness | same demand, a different (safer) session is selected |
+| Reduced / autoregulated (personalised) | no recent poorer-response history | the base **Normal** decision returns |
+
+## 31. Where it lives
+
+The explorer is a collapsed disclosure inside the *"Why this recommendation"* area on
+Today. It is deliberately not a navigation destination, and it never appears when the
+user is not asking a question.
+
+## 32. The complete V1.3 loop
+
+```
+Understand today → Recommend → Start session → Calibrate during the session
+→ Complete → Post-session feedback → Next-day check-in → Response Episode complete
+→ Personal Response Profile → Recommendation Confidence → Future recommendation
+→ Explain (Decision Trace · Session Trace · Coach)
+```
+
+## 33. Final science boundary
+
+In-session calibration and the decision explorer are **transparent product heuristics**.
+They are not prospectively validated physiological decision thresholds, and no reference
+is cited to justify an exact rule. They never produce a recovery percentage, a tolerance
+score, an injury probability or a prediction of what will happen.
+
 ## 12. Science boundaries
 
 These rules are **transparent product heuristics**. No published study validates this
@@ -371,3 +528,13 @@ progression model.
    study validates them and none of them is a probability.
 8. No wearable, no cloud sync, no accounts, no machine learning, no numeric confidence
    score.
+9. **In-session calibration is manual.** It asks the user to report perceived effort, an
+   RIR and a performance feeling; it is not device-measured, and it does not read
+   velocity, load or heart rate in real time.
+10. **The checkpoint is one moment, not continuous monitoring.** A session with no
+    checkpoint is a completely valid session and produces no calibration event.
+11. **The decision explorer is a rule explorer.** It shows what the current rules would
+    decide under one changed input; it is not a forecast, and the levers are limited to
+    the three inputs the engines can accept safely.
+12. **An active session is a single client-owned record.** Starting a second session
+    replaces the first one's plan; only the completed session is logged.

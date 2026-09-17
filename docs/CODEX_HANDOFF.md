@@ -16,8 +16,9 @@
 | Branch | `v1.3-adaptive-decision-loop` |
 | 已冻结基线 | `v1.2-nextjs-migration` = `7d21568`（V1.2 RC）· `v1.1-productization` = `0c42048` · `main` = `fe09ab6` · tag 仅 `v1.0.0` |
 | V1.3 Phase 1（已推送） | `673010f` `docs: document the adaptive decision loop phase 1` |
-| V1.3 Phase 2（本地未 push） | 见本文件所在 commit（`docs: record adaptive loop phase 2`） |
-| Test baseline | `python -m pytest -v` → **209 passed**（`test_app.py` 139 · `test_adaptive.py` 31 · `test_api.py` 39） |
+| V1.3 Phase 2（已推送） | `e09a88b` `docs: record adaptive loop phase 2` |
+| V1.3 最终冲刺（本地，待 push） | 见本文件所在 commit |
+| Test baseline | `python -m pytest -v` → **246 passed**（`test_app.py` 139 · `test_adaptive.py` 31 · `test_api.py` 39 · `test_calibration.py` 37） |
 | Compile | `python -m compileall .` → PASS |
 | GitHub remote (`origin`) | `https://github.com/ethanzhang0617-dot/personal-readiness-assistant.git` |
 | Tags | 仅 `v1.0.0`（V1.1 未打 tag、未发 Release） |
@@ -213,6 +214,51 @@ Decision Trace **不是** LLM chain-of-thought，也不是 debug log；它是产
   跨引擎响应式 **54/54**；视觉 QA 45 个 路由×视口 组合全部通过（横向溢出 0px）。
 * 细节见 `docs/V1_3_ADAPTIVE_DECISION_LOOP.md`（§14–§20）。
 
+## V1.3 最终冲刺 — In-session Calibration 与 What-if / Decision Explorer（本地未 push）
+
+* **In-session Calibration**：Train 上出现明确的 **active session**（开始 → 进行中 → 完成 → 反馈）。
+  开始时会显示 session / how hard / effort guidance / duration，并带一条独立的 **session trace**
+  （PRE-SESSION DECISION → PERSONAL RESPONSE → STARTING GUIDANCE → IN-SESSION OBSERVATION →
+  CALIBRATION → FINAL SESSION GUIDANCE，不并入 Today 的 Decision Trace）。
+* **只问一次的可选 checkpoint**：effort（easier / as expected / harder）、representative set 的实际
+  RIR（0–5 或 not sure）、performance feeling。**不再问 sleep / HRV / stress / motivation**。
+* **三种结果，全部有界**：HOLD（与计划一致）；EASE（safety flag、局部酸痛 ≥4/5、RIR 低于处方区间、
+  或 performance 比预期差）；OPTIONAL PUSH（readiness GREEN 且无 block，且 easier + RIR 高于处方上限 +
+  performance 至少与预期一致）。**"仅 harder than expected" 视为一次硬 moment，保持 HOLD。**
+* **绝对边界**：不改 demand tier（`Moderate → High`、`Low → Moderate` 均禁止）、不改 training focus /
+  programme / 动作 / 组数、不加量、不抬周目标、不覆盖 safety / 酸痛 / exposure。对外公布的 scope 字符串为
+  `Within the effort range already prescribed — no tier, focus, exercise or volume change`。
+* **Response Episode 扩展**：BEFORE → RECOMMENDED → **CALIBRATED** → PERFORMED → POST-SESSION →
+  AFTER；没有 checkpoint 的旧情节 `calibrated = null`，**不重写任何历史数据**。
+* **Calibration 不会绕过学习闭环**：checkpoint **不直接**更新 Personal Response；仍然只有"反馈 + 次日
+  签到"都齐的完整情节才算证据（Phase 1 契约不变）。
+* **Calibration history**：每次 checkpoint 存一条精简记录（日期 / session / 起始指导 / effort / 实际 RIR /
+  performance / result / reason / 更新后指导），Insights 显示最近几条与一句趋势。
+* **What-if / Decision Explorer**：Today 的 "Why this recommendation" 内一个折叠面板（**不是**主导航）。
+  三个 lever（更多局部酸痛 / 更差的恢复之夜 / 没有近期 poorer 响应历史），**一次只改一个输入**，
+  由**同一套 deterministic engines** 重算，显示 Current / 改动内容 / Alternative / 变化点 / 原因。
+  文案明确"这是规则探索器，不是预测"。
+* **只读**：`POST /api/state/what-if` **不返回 state**，profile / check-in / session / Response Episode /
+  Personal Response / adaptation history 均不被修改（全部在深拷贝上计算）。
+* **演示（均可通过真实规则复现）**：`High` + 更高酸痛 → 同一 demand、换成更安全的 session；
+  `Reduced / autoregulated`（个性化后）+ 忽略 poorer 历史 → 回到 base `Normal`。
+* **Coach**：新增确定性 calibration 事实回答（今天的 calibration / 最近是否经常需要降低强度 / 刚记录的 RIR /
+  为何让我降低强度），**0 次 provider 调用**；文档中的中文问法也能命中同一确定性分支（产品文案仍为英文）。
+* **存储**：schema 仍为 **v3**。新增 `active_session`（默认 `null`）与每个 session 的
+  `response_calibration`（默认 `null`），均为纯增量字段，不升版本、不重置；`pnpm check:store` 14 → **17/17**。
+* **最终冲刺中发现并修复的真实 bug**（详见 `docs/V1_3_FINAL_QA.md` §4）：
+  1. `RPE 3–4 / 10` 被解析成 `3–4 RIR` 区间（有氧路径会被拿 RIR 区间比较）—— 现在 RIR 单位是必需的；
+  2. calibration 的 reason 被 `str.capitalize()` 把 "RIR" 小写成 "rir" —— 改为只大写首字母；
+  3. `"increase"` 被当成关键字 `"ease"`，导致 "Why didn't you increase…" 被 calibration 分支拦截 —— 改为
+     英文关键字按词边界匹配（中文仍按子串）；
+  4. `calibration_service.history()` 把 pydantic `SessionRow` 当 dict 用，导致 14 个 API 测试报
+     `AttributeError` —— 改为 `model_dump()` 归一化。
+* **测试**：**246 / 246 PASS**（新增 `test_calibration.py` 37 项）。前端 lint / typecheck / build /
+  `check:store` 全绿；最终 V1.3 journey **38/38**、Phase 1 **19/19**、Phase 2 **31/31**、
+  V1.2 parity **20/20**、跨引擎 **54/54**、路由×视口 **45/45**、最终界面×5 视口 **45/45**、
+  import **10/10**、API down **6/6**、API up **2/2**；console blocking errors **NONE**。
+* 细节见 `docs/V1_3_ADAPTIVE_DECISION_LOOP.md`（§21–§33）与 `docs/V1_3_FINAL_QA.md`。
+
 * Phase 4 = **发布就绪**（无新功能）：运行时配置（`frontend/.env.example` 单一样本；后端环境变量见
   `docs/V1_2_DEPLOYMENT.md`）、CORS 生产配置说明、跨引擎 QA、API/AI 不可用行为、导入安全、部署文档、
   以及必需的 ZIP 交付包。
@@ -296,10 +342,10 @@ password/credential、私钥块、AWS/GitHub token 等模式），发现真实�
 确认必需源文件与示例配置存在、并解包到临时目录做基本健全性检查
 （至少 `python3 -m compileall .` 与 `python3 -m pytest` 在解包副本中通过）。
 
-当前基线交付物：`Personal_Readiness_Assistant_V1.3_Phase2_Personal_Response.zip`（416 KB，
-164 条目，密钥扫描 130 个跟踪文件 0 命中，解包副本 `compileall` PASS + 209/209 测试通过 +
-`pnpm check:store` 14/14）。上一阶段交付物为
-`Personal_Readiness_Assistant_V1.2_Phase4_Release_Candidate.zip`（353 KB，153 条目）。
+当前基线交付物：`Personal_Readiness_Assistant_V1.3_FINAL_Portfolio_Build.zip`（见 `docs/V1_3_FINAL_QA.md`
+所在 commit 的最终报告中的体积与条目数）。它取代此前所有 V1.3 开发期 ZIP
+（`Personal_Readiness_Assistant_V1.3_Phase1_Adaptive_Loop.zip`、
+`Personal_Readiness_Assistant_V1.3_Phase2_Personal_Response.zip`）。
 
 # Science & References（V1.1 audit，2026-09-16）
 
@@ -389,10 +435,11 @@ password/credential、私钥块、AWS/GitHub token 等模式），发现真实�
 
 # Test Baseline
 
-`python -m compileall .` → PASS；`python -m pytest -v` → **209 / 209 passed**
-（139 项 Streamlit/engine 回归 + 31 项 V1.3 自适应层 `test_adaptive.py` + 39 项 FastAPI 适配层 `test_api.py`）。
+`python -m compileall .` → PASS；`python -m pytest -v` → **246 / 246 passed**
+（139 项 Streamlit/engine 回归 + 31 项 V1.3 自适应层 `test_adaptive.py` + 39 项 FastAPI 适配层
+`test_api.py` + 37 项最终冲刺 `test_calibration.py`）。
 
-前端：`pnpm lint` · `pnpm typecheck` · `pnpm build` · `pnpm check:store`（14/14）全部 PASS。
+前端：`pnpm lint` · `pnpm typecheck` · `pnpm build` · `pnpm check:store`（17/17）全部 PASS。
 
 关键 regression 区域：mobile shell 间距契约与 chrome 选择器 · Today 首屏（Readiness / Training / Session Demand / CTA）·
 Train 的 primary 与 alternatives 层级 + 8 步 decision trace · 档案切换与 Demo/Local 隔离 · IndexedDB 写入/刷新/恢复 ·
@@ -488,6 +535,15 @@ V1.1 已完成较完整的 visual polish（颜色角色、排版、卡片、间�
     伪装出某个证据状态。
 25. Recency policy 只影响"哪些情节可以驱动今天"，**不得静默丢弃旧情节**——旧情节必须继续出现在 history、
     profile 计数与 Insights 中。
+26. **In-session Calibration 只有三种结果**（HOLD / EASE / OPTIONAL PUSH），且**永远不得**改变 demand
+    tier、training focus、programme、动作、组数、周目标，也不得覆盖 safety / 酸痛 / exposure。
+27. **Calibration 不得绕过学习闭环**：checkpoint 不直接更新 Personal Response；只有"训练后反馈 + 次日签到"
+    都齐的**完整**情节才能成为证据。
+28. **What-if / Decision Explorer 必须使用同一套 deterministic engines**，一次只改一个输入；不得引入第二个
+    推荐模型，不得让 LLM 计算结果；**不得返回或持久化任何 state**（只读模拟）。
+29. **不得把 What-if 描述成预测**：文案是"当前规则下如果这个条件不同会如何决策"，禁止"系统预测你会…"。
+30. **Calibration / What-if 都是透明的产品启发式**，必须如实标注，不得用引用为其具体规则背书，也不得产出
+    恢复百分比、耐受分数或伤病概率。
 
 # Do Not Resurrect Without Explicit Decision
 
@@ -507,6 +563,11 @@ V1.1 已完成较完整的 visual polish（颜色角色、排版、卡片、间�
   readiness 允许该档位，并作为显式产品决策重新评估。
 * **不要给 Recommendation Confidence 加上百分比或数值分数**，也不要把它接进 readiness 计算。
 * 不要在 UI 里重新计算 Personal Response 的任何数值；所有结论必须来自后端结构化字段。
+* **不要给 In-session Calibration 增加第四种结果**，也不要让它改变 demand tier / focus / programme /
+  动作 / 组数，或覆盖 safety / 酸痛 / exposure。
+* **不要让 Calibration 直接写入 Personal Response**：学习闭环只认"反馈 + 次日签到"的完整情节。
+* **不要让 What-if 返回 state、写回任何数据，或引入第二个推荐模型**；也不要把它包裝成预测。
+* 不要为了展示效果而让 demo 出现真实规则无法产生的 calibration / what-if 结果。
 
 # Product Roadmap
 
@@ -533,10 +594,15 @@ Personal Response Profile（按 demand band，按 focus 需 ≥3 情节）· Rec
 （Limited / Developing / Strong，定性、非概率）· Evidence Coverage · Consistency · Recency policy ·
 Adaptation History · 不可达向上调整的诚实替代（within-tier personalization）。
 
-**FUTURE PRODUCT STEP — V1.3 Phase 3（尚未开始）**
-In-session Calibration · What-if / Counterfactual Decision Explorer。
+**DONE — V1.3 最终冲刺（本地，待 push）**
+In-session Calibration（HOLD / EASE / OPTIONAL PUSH，active session + session trace）·
+What-if / Decision Explorer（同一引擎、一次只改一个输入、只读）· 闭环整合 · 最终文档与 QA。
+**V1.3 到此结项。**
 
-# Adaptive Decision Loop（Phase 1 与 Phase 2 已实现，Phase 3 未实现）
+**NEXT — PORTFOLIO CREATION（不是产品开发）**
+不再有 V1.3 产品阶段；V1.4 未获批准，不得开始。
+
+# Adaptive Decision Loop（V1.3 已全部实现并结项）
 
 ```
 Understand today → Recommend → Perform session → Observe actual response
@@ -544,9 +610,9 @@ Understand today → Recommend → Perform session → Observe actual response
 ```
 
 产品演进主线：**Personal Baseline → Personal Response**。
-Phase 1（响应情节 / 有界调整 / Decision Trace / Coach）与 Phase 2（Profile / Confidence /
-Coverage / Consistency / Recency / Adaptation History / within-tier）**均已实现**；
-Phase 3 的 In-session Calibration 与 What-if Explorer **尚未实现**。
+Phase 1（响应情节 / 有界调整 / Decision Trace / Coach）、Phase 2（Profile / Confidence /
+Coverage / Consistency / Recency / Adaptation History / within-tier）与最终冲刺的
+In-session Calibration + What-if Explorer **均已实现**。
 
 # Wearable Roadmap（FUTURE / NOT IMPLEMENTED）
 
@@ -571,6 +637,7 @@ Streamlit V1.1 **仍然保留且可运行**，是 reference implementation，不
 5. 确认最新 baseline（branch / commit / tests）。
 6. `python -m compileall .`
 7. `python -m pytest -v`
-8. 确认 test baseline（当前应为 **209 passed**：`test_app.py` 139 · `test_adaptive.py` 31 · `test_api.py` 39）。
+8. 确认 test baseline（当前应为 **246 passed**：`test_app.py` 139 · `test_adaptive.py` 31 ·
+   `test_api.py` 39 · `test_calibration.py` 37）。
 9. **不要修改任何代码。**
 10. 先汇报理解，然后等待用户的下一条指令。
