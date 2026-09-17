@@ -4,7 +4,13 @@ import { useEffect, useState } from "react";
 
 import { ExposureList } from "@/components/exposure-list";
 import { PageHeader } from "@/components/page-header";
-import { PersonalResponseSummary, ResponseEpisodeList } from "@/components/personal-response";
+import {
+  AdaptationHistoryList,
+  EvidenceCoveragePanel,
+  PersonalResponseProfilePanel,
+  PersonalResponseSummary,
+  ResponseEpisodeList,
+} from "@/components/personal-response";
 import { StatePanel } from "@/components/state-panel";
 import { StatusBadge } from "@/components/status-badge";
 import { TrendChart } from "@/components/trend-chart";
@@ -169,14 +175,44 @@ export function InsightsView() {
         description="Built from your logged sessions, your own post-session feedback and the next morning check-in. Observed patterns only."
       >
         {response ? (
-          <div className="space-y-4">
-            {response.reason ? (
+          <div className="space-y-6">
+            {response.reason || response.detail ? (
               <p className="text-[0.8rem] leading-relaxed">
-                {response.adjustment ? response.reason : (response.detail ?? "No adjustment today.")}
+                {response.adjustment
+                  ? response.reason
+                  : (response.within_tier?.guidance ?? response.no_increase_reason ?? response.detail ?? "No adjustment today.")}
               </p>
             ) : null}
+
             <PersonalResponseSummary response={response} />
-            <ResponseEpisodeList episodes={response.episodes} />
+
+            <div>
+              <p className="eyebrow">Personal response profile</p>
+              <div className="mt-2">
+                <PersonalResponseProfilePanel profile={response.profile} />
+              </div>
+            </div>
+
+            <div>
+              <p className="eyebrow">Evidence coverage</p>
+              <div className="mt-2">
+                <EvidenceCoveragePanel coverage={response.coverage} />
+              </div>
+            </div>
+
+            <div>
+              <p className="eyebrow">Recent response episodes</p>
+              <div className="mt-2">
+                <ResponseEpisodeList episodes={response.episodes} />
+              </div>
+            </div>
+
+            <div>
+              <p className="eyebrow">Adaptation history</p>
+              <div className="mt-2">
+                <AdaptationHistoryList history={response.adaptation_history} />
+              </div>
+            </div>
           </div>
         ) : (
           <Skeleton className="h-32 w-full" />

@@ -77,6 +77,8 @@ export interface TrainingRecommendation {
   /** V1.3: the engine's own demand is kept next to the final, adapted one. */
   base_session_demand?: string | null;
   personal_response?: PersonalResponse | null;
+  /** V1.3 Phase 2: qualitative confidence in the personalisation evidence. */
+  recommendation_confidence?: RecommendationConfidence | null;
   adaptation?: PersonalResponseAdaptation | null;
   duration: string;
   estimated_duration_min_range: number[] | null;
@@ -124,6 +126,17 @@ export interface DecisionTraceStep {
   step: string;
   value: string;
   source: string;
+  /** V1.3 Phase 2: structured, scannable detail for the PERSONAL RESPONSE step. */
+  detail?: PersonalResponseTraceDetail | null;
+}
+
+/** Structured detail attached to the PERSONAL RESPONSE step of the Decision Trace. */
+export interface PersonalResponseTraceDetail {
+  evidence: string;
+  pattern: string;
+  confidence: string;
+  confidence_state: string | null;
+  adjustment: string;
 }
 
 export interface ProfileSummary {
@@ -334,6 +347,107 @@ export interface PersonalResponseAdaptation {
   from: string | null;
   to: string | null;
   reason: string;
+  confidence?: string | null;
+  scope?: string | null;
+}
+
+/* ------------------------------------------------------------------ */
+/* V1.3 Phase 2 — profile, evidence and confidence                     */
+/* ------------------------------------------------------------------ */
+
+/** Qualitative confidence in the *evidence*, never a probability or a recovery score. */
+export type ConfidenceState = "Limited" | "Developing" | "Strong";
+
+export interface RecommendationConfidence {
+  state: ConfidenceState | string;
+  label: string;
+  explanation: string;
+  relevant_episodes: number;
+  consistent: boolean;
+  factors: Record<string, unknown>;
+  note: string;
+}
+
+export interface EvidenceCoverage {
+  episodes_total: number;
+  episodes_complete: number;
+  episodes_pending: number;
+  feedback_without_check_in: number;
+  last_complete_date: string | null;
+  last_complete_days_ago: number | null;
+  bands: Array<{ band: string; observations: number }>;
+  note: string;
+}
+
+export interface PatternConsistency {
+  label: string;
+  direction: string | null;
+  ratio: number;
+  consistent: boolean;
+  counts: { poorer_than_usual: number; as_usual: number; better_than_usual: number };
+  episodes: number;
+}
+
+export interface RelevantEpisodes {
+  band: string | null;
+  count: number;
+  session_ids: Array<string | null>;
+  window_days: number;
+  max_episodes: number;
+}
+
+/** One demand band of the Personal Response Profile. */
+export interface PersonalResponseBandProfile {
+  band: string;
+  demand: string;
+  observations: number;
+  poorer: number;
+  as_usual: number;
+  better: number;
+  pattern: string;
+  evidence: string;
+  recent_observations: number;
+  recent_pattern: string;
+}
+
+/** Training-focus pattern; only present once its own data can support it. */
+export interface ResponseFocusPattern {
+  focus: string;
+  observations: number;
+  poorer: number;
+  as_usual: number;
+  better: number;
+  pattern: string;
+  evidence: string;
+}
+
+export interface PersonalResponseProfile {
+  bands: PersonalResponseBandProfile[];
+  focus: ResponseFocusPattern[];
+  focus_note: string;
+}
+
+export interface WithinTierGuidance {
+  available: boolean;
+  guidance: string | null;
+  reason: string | null;
+  scope?: string;
+}
+
+/** One meaningful adaptation decision (a change or an evaluated no-change). */
+export interface AdaptationEvent {
+  date: string;
+  base_demand: string | null;
+  base_band: string | null;
+  final_demand: string | null;
+  final_band: string | null;
+  adjustment: number;
+  result: string;
+  confidence: string | null;
+  evidence: string | null;
+  relevant_episodes: number;
+  reason: string;
+  recorded_at: string;
 }
 
 export interface ResponseEpisode {
@@ -399,6 +513,19 @@ export interface PersonalResponse {
   evidence: string | null;
   reason: string | null;
   detail: string | null;
+  no_increase_reason?: string | null;
+  /** V1.3 Phase 2 additions. */
+  confidence?: RecommendationConfidence | null;
+  confidence_state?: string | null;
+  coverage?: EvidenceCoverage | null;
+  consistency?: PatternConsistency | null;
+  relevant?: RelevantEpisodes | null;
+  relevant_episodes?: number;
+  profile?: PersonalResponseProfile | null;
+  bands_profile?: PersonalResponseBandProfile[];
+  focus_profile?: ResponseFocusPattern[];
+  within_tier?: WithinTierGuidance | null;
+  adaptation_history?: AdaptationEvent[];
   summary: {
     episodes_total?: number;
     episodes_complete?: number;
@@ -419,6 +546,8 @@ export interface UserState {
   check_in: DailyRow | null;
   daily_history: DailyRow[];
   training_history: SessionRow[];
+  /** V1.3 Phase 2: one meaningful adaptation decision per day (oldest first). */
+  adaptation_log: AdaptationEvent[];
 }
 
 export interface ScenarioInfo {

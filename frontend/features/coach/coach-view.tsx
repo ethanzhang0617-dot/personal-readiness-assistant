@@ -20,9 +20,13 @@ const STARTERS = [
 ];
 
 // Personal Response starters resolve deterministically (zero provider calls).
+// The wording is deliberately the phrasing the deterministic router matches.
 const RESPONSE_STARTERS = [
   "How do I usually respond to high-demand sessions?",
-  "Why was today's session adjusted?",
+  "How confident is today's personalized recommendation?",
+  "How many sessions support this adjustment?",
+  "Has Personal Response changed my training before?",
+  "Why didn't you increase today's training if I usually recover well?",
 ];
 
 // Provenance is communicated quietly: a small label above the answer, never a

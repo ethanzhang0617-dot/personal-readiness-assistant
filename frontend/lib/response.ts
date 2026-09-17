@@ -17,7 +17,26 @@ export const RESPONSE_DEMO_LABELS: Record<ResponseDemoCase, string> = {
   insufficient: "Not enough history yet",
   emerging: "Emerging pattern",
   poor_high_tolerance: "Poor tolerance to high demand (shows an adjustment)",
-  established_good: "Established good tolerance",
+  established_good: "Established good tolerance (within-tier guidance)",
+};
+
+/**
+ * Recommendation Confidence vocabulary. Qualitative on purpose: it describes how
+ * much personal evidence supports the personalisation, never a probability and
+ * never a claim about recovery.
+ */
+export const CONFIDENCE_LABELS: Record<string, string> = {
+  Limited: "Limited evidence",
+  Developing: "Developing evidence",
+  Strong: "Strong evidence",
+};
+
+/** Restrained wording for one adaptation-history entry. */
+export const ADAPTATION_RESULT_LABELS: Record<string, string> = {
+  reduced: "Session demand reduced",
+  raised: "Session demand raised",
+  within_tier: "Within-tier guidance",
+  no_change: "Evaluated, no change",
 };
 
 export const COMPLETION_OPTIONS = ["Completed", "Modified", "Stopped early"] as const;

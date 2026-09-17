@@ -86,6 +86,55 @@ check("v2 → v3 keeps an existing response snapshot and feedback", () => {
   assert.equal(session.response_feedback.completion, "Stopped early");
 });
 
+check("v2 → v3 gives every profile an empty adaptation history", () => {
+  const result = migrateEnvelope(v2);
+  for (const item of Object.values(result.envelope.states)) {
+    assert.deepEqual(item.adaptation_log, []);
+  }
+});
+
+check("v2 → v3 keeps a recorded adaptation history", () => {
+  const withLog = {
+    ...v2,
+    states: {
+      "demo-ethan": {
+        ...state("demo-ethan"),
+        adaptation_log: [{
+          date: "2026-09-15",
+          base_demand: "Normal",
+          base_band: "High",
+          final_demand: "Reduced / autoregulated",
+          final_band: "Moderate",
+          adjustment: -1,
+          result: "reduced",
+          confidence: "Developing",
+          evidence: "Emerging",
+          relevant_episodes: 3,
+          reason: "3 of 3 high-demand sessions were followed by a poorer next-day response.",
+          recorded_at: "2026-09-15T07:30:00+00:00",
+        }],
+      },
+    },
+  };
+  const log = migrateEnvelope(withLog).envelope.states["demo-ethan"].adaptation_log;
+  assert.equal(log.length, 1);
+  assert.equal(log[0].result, "reduced");
+  assert.equal(log[0].final_band, "Moderate");
+  assert.equal(log[0].reason.includes("poorer next-day response"), true);
+});
+
+check("a current envelope missing the adaptation history gains one, not a reset", () => {
+  const current = migrateEnvelope(v2).envelope;
+  delete current.states["demo-ethan"].adaptation_log;
+  const again = migrateEnvelope(current);
+  // Adding an optional field is backwards compatible, so the schema stays at V3.
+  assert.equal(again.report.migrated, false);
+  assert.deepEqual(again.envelope.states["demo-ethan"].adaptation_log, []);
+  // The pre-existing user data is untouched by the additive field.
+  assert.equal(again.envelope.states["demo-ethan"].training_history.length, 1);
+  assert.equal(again.envelope.states["demo-ethan"].daily_history.length, 1);
+});
+
 check("v1 → v3 wraps the single-profile envelope instead of discarding it", () => {
   const legacy = {
     version: 1,

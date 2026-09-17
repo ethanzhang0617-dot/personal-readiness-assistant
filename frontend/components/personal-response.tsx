@@ -1,18 +1,189 @@
 import { ChevronRight } from "lucide-react";
 
 import { formatNumber, formatShortDate } from "@/lib/format";
-import { EVIDENCE_LABELS } from "@/lib/response";
-import type { PersonalResponse, ResponseEpisode } from "@/types/api";
+import { ADAPTATION_RESULT_LABELS, EVIDENCE_LABELS } from "@/lib/response";
+import type {
+  AdaptationEvent,
+  EvidenceCoverage,
+  PersonalResponse,
+  PersonalResponseProfile,
+  RecommendationConfidence,
+  ResponseEpisode,
+} from "@/types/api";
 import { cn } from "@/lib/utils";
 
 // Personal Response presentation. Observed response patterns only — never a
 // recovery percentage, probability or "AI learned your body" claim.
+//
+// V1.3 Phase 2 adds the profile (by demand and, where the data supports it, by
+// focus), the evidence coverage, the recommendation confidence and the
+// adaptation history. All of it stays qualitative on purpose.
+
+function evidenceTone(evidence: string | null | undefined): string {
+  return evidence === "Established"
+    ? "bg-[var(--status-green-soft)] text-[var(--status-green)]"
+    : evidence === "Emerging"
+      ? "bg-[var(--status-amber-soft)] text-[var(--status-amber)]"
+      : "bg-surface-muted text-muted";
+}
+
+/**
+ * Recommendation Confidence, as a compact label. It describes how much recent
+ * personal evidence supports the personalisation — never a probability, and
+ * never a claim about how recovered the user is.
+ */
+export function ConfidenceBadge({ confidence, className }: {
+  confidence?: RecommendationConfidence | null;
+  className?: string;
+}) {
+  if (!confidence?.label) return null;
+  return (
+    <span
+      className={cn(
+        "inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[0.62rem] font-semibold",
+        evidenceTone(confidence.state),
+        className,
+      )}
+    >
+      {confidence.label}
+    </span>
+  );
+}
+
+/** The profile: what the system has learned, with the counts behind it. */
+export function PersonalResponseProfilePanel({ profile }: { profile?: PersonalResponseProfile | null }) {
+  if (!profile) return null;
+  return (
+    <div className="space-y-4">
+      <ul className="divide-y divide-subtle border-y border-subtle">
+        {profile.bands.map((band) => (
+          <li key={band.band} className="flex items-start justify-between gap-3 py-3">
+            <div className="min-w-0">
+              <p className="text-[0.84rem] font-semibold">
+                {band.band} demand
+                <span className="ml-2 text-[0.7rem] font-normal text-muted">
+                  {band.observations} observation{band.observations === 1 ? "" : "s"}
+                </span>
+              </p>
+              <p className="mt-0.5 text-[0.74rem] text-muted">
+                {band.observations > 0
+                  ? `${band.poorer} / ${band.observations} poorer · ${band.as_usual} / ${band.observations} as expected · ${band.better} / ${band.observations} good`
+                  : "No recorded session at this demand yet"}
+              </p>
+              <p className="mt-1 text-[0.76rem]">{band.pattern}</p>
+              <p className="mt-0.5 text-[0.7rem] text-muted">Recent pattern: {band.recent_pattern}</p>
+            </div>
+            <span
+              className={cn(
+                "shrink-0 rounded-full px-2 py-0.5 text-[0.62rem] font-semibold",
+                evidenceTone(band.evidence),
+              )}
+            >
+              {EVIDENCE_LABELS[band.evidence] ?? band.evidence}
+            </span>
+          </li>
+        ))}
+      </ul>
+
+      {profile.focus.length > 0 ? (
+        <div>
+          <p className="eyebrow">By training focus</p>
+          <ul className="mt-2 space-y-2">
+            {profile.focus.map((row) => (
+              <li key={row.focus} className="flex items-start justify-between gap-3">
+                <span className="min-w-0 text-[0.78rem]">
+                  <span className="font-medium">{row.focus}</span>
+                  <span className="ml-2 text-muted">
+                    {row.observations} observation{row.observations === 1 ? "" : "s"}
+                  </span>
+                </span>
+                <span className="shrink-0 text-[0.72rem] text-muted">{row.pattern}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      <p className="text-[0.68rem] leading-relaxed text-muted">{profile.focus_note}</p>
+    </div>
+  );
+}
+
+/** How much personalised history actually exists. No fake precision. */
+export function EvidenceCoveragePanel({ coverage }: { coverage?: EvidenceCoverage | null }) {
+  if (!coverage) return null;
+  const last =
+    coverage.last_complete_days_ago === null
+      ? "—"
+      : coverage.last_complete_days_ago === 0
+        ? "Today"
+        : coverage.last_complete_days_ago === 1
+          ? "Yesterday"
+          : `${coverage.last_complete_days_ago} days ago`;
+  return (
+    <div className="space-y-3">
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-[0.75rem]">
+        <div>
+          <dt className="text-muted">Completed episodes</dt>
+          <dd className="font-medium tabular-nums">{coverage.episodes_complete}</dd>
+        </div>
+        <div>
+          <dt className="text-muted">Last complete episode</dt>
+          <dd className="font-medium">{last}</dd>
+        </div>
+        {coverage.bands.map((row) => (
+          <div key={row.band}>
+            <dt className="text-muted">{row.band}-demand observations</dt>
+            <dd className="font-medium tabular-nums">{row.observations}</dd>
+          </div>
+        ))}
+        <div>
+          <dt className="text-muted">Awaiting next check-in</dt>
+          <dd className="font-medium tabular-nums">{coverage.episodes_pending}</dd>
+        </div>
+      </dl>
+      <p className="text-[0.68rem] leading-relaxed text-muted">{coverage.note}</p>
+    </div>
+  );
+}
+
+/** Meaningful decision events only: a change, or an evaluated no-change. */
+export function AdaptationHistoryList({ history = [] }: { history?: AdaptationEvent[] }) {
+  if (!history.length) {
+    return (
+      <p className="text-[0.8rem] text-muted">
+        No adaptation decisions recorded yet. Today&apos;s evaluation is saved as soon as the product computes your
+        recommendation.
+      </p>
+    );
+  }
+  return (
+    <ul className="divide-y divide-subtle border-y border-subtle">
+      {history.map((row) => (
+        <li key={`${row.date}-${row.recorded_at}`} className="py-3">
+          <div className="flex items-start justify-between gap-3">
+            <p className="text-[0.8rem] font-medium">{formatShortDate(row.date)}</p>
+            <span className="shrink-0 text-[0.7rem] text-muted">
+              {ADAPTATION_RESULT_LABELS[row.result] ?? row.result}
+            </span>
+          </div>
+          <p className="mt-0.5 text-[0.72rem] text-muted tabular-nums">
+            Base {row.base_band ?? "—"} → final {row.final_band ?? "—"}
+            {row.confidence ? ` · ${row.confidence} evidence` : ""}
+            {row.relevant_episodes ? ` · ${row.relevant_episodes} relevant sessions` : ""}
+          </p>
+          <p className="mt-1 text-[0.74rem] leading-relaxed">{row.reason}</p>
+        </li>
+      ))}
+    </ul>
+  );
+}
 
 export function PersonalResponseSummary({ response }: { response: PersonalResponse }) {
   const summary = response.summary ?? {};
-  const bands = response.bands ?? [];
+  const confidence = response.confidence ?? null;
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       <dl className="grid grid-cols-3 gap-px overflow-hidden rounded-[var(--radius-control)] bg-subtle">
         <div className="bg-surface px-3 py-3">
           <dt className="text-[0.7rem] text-muted">Complete episodes</dt>
@@ -30,33 +201,15 @@ export function PersonalResponseSummary({ response }: { response: PersonalRespon
         </div>
       </dl>
 
-      <ul className="divide-y divide-subtle border-y border-subtle">
-        {bands.map((band) => (
-          <li key={band.band} className="flex items-start justify-between gap-3 py-3">
-            <div className="min-w-0">
-              <p className="text-[0.84rem] font-semibold">
-                {band.band} demand
-                <span className="ml-2 text-[0.7rem] font-normal text-muted">
-                  {band.observations} observation{band.observations === 1 ? "" : "s"}
-                </span>
-              </p>
-              <p className="mt-0.5 text-[0.75rem] text-muted">{band.pattern}</p>
-            </div>
-            <span
-              className={cn(
-                "shrink-0 rounded-full px-2 py-0.5 text-[0.62rem] font-semibold",
-                band.evidence === "Established"
-                  ? "bg-[var(--status-green-soft)] text-[var(--status-green)]"
-                  : band.evidence === "Emerging"
-                    ? "bg-[var(--status-amber-soft)] text-[var(--status-amber)]"
-                    : "bg-surface-muted text-muted",
-              )}
-            >
-              {EVIDENCE_LABELS[band.evidence] ?? band.evidence}
-            </span>
-          </li>
-        ))}
-      </ul>
+      {confidence ? (
+        <div className="flex items-start justify-between gap-3 border-t border-subtle pt-3">
+          <div className="min-w-0">
+            <p className="eyebrow">Recommendation confidence</p>
+            <p className="mt-1 text-[0.78rem] leading-relaxed">{confidence.explanation}</p>
+          </div>
+          <ConfidenceBadge confidence={confidence} />
+        </div>
+      ) : null}
 
       {response.note ? <p className="text-[0.7rem] leading-relaxed text-muted">{response.note}</p> : null}
     </div>

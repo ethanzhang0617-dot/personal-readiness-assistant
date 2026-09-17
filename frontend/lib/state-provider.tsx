@@ -105,17 +105,42 @@ export function UserStateProvider({ children }: { children: ReactNode }) {
     [],
   );
 
-  const refreshToday = useCallback(async (target: UserState | null) => {
-    if (!target) return null;
-    const result = await api.stateToday(target);
-    if (!result.ok) {
-      setError(result.error);
-      return null;
-    }
-    setError(null);
-    setToday(result.data.today);
-    return result.data.today;
-  }, []);
+  // `/state/today` is a compute endpoint that also returns the state it computed
+  // from, with today's adaptation-history entry appended. Persisting that copy is
+  // what makes the Adaptation History in Insights real rather than decorative, so
+  // the caller passes the state map and chat list it already knows.
+  const refreshToday = useCallback(
+    async (
+      target: UserState | null,
+      currentStates: Record<string, UserState>,
+      currentChats: Record<string, ChatMessage[]>,
+    ) => {
+      if (!target) return null;
+      const result = await api.stateToday(target);
+      if (!result.ok) {
+        setError(result.error);
+        return null;
+      }
+      setError(null);
+      setToday(result.data.today);
+      const profileId = result.data.state.profile_id;
+      // The request carries a *display* copy of the state, where yesterday's
+      // check-in is hidden so today's readiness falls back to the scenario. Never
+      // let that round trip erase a check-in the browser is still holding.
+      const previous = currentStates[profileId];
+      const computed = result.data.state;
+      const nextStates = {
+        ...currentStates,
+        [profileId]: previous?.check_in && !computed.check_in
+          ? { ...computed, check_in: previous.check_in }
+          : computed,
+      };
+      setStates(nextStates);
+      await persist(nextStates, currentChats, profileId);
+      return result.data.today;
+    },
+    [persist],
+  );
 
   useEffect(() => {
     if (bootstrapped.current) return;
@@ -132,7 +157,11 @@ export function UserStateProvider({ children }: { children: ReactNode }) {
         setChats((stored.chats as Record<string, ChatMessage[]>) ?? {});
         setActiveId(stored.active_profile_id || DEFAULT_PROFILE_ID);
         setStorageAvailable(true);
-        await refreshToday(forToday(stored.states[stored.active_profile_id] ?? stored.states[DEFAULT_PROFILE_ID] ?? null));
+        await refreshToday(
+          forToday(stored.states[stored.active_profile_id] ?? stored.states[DEFAULT_PROFILE_ID] ?? null),
+          stored.states,
+          (stored.chats as Record<string, ChatMessage[]>) ?? {},
+        );
         setReady(true);
         return;
       }
@@ -148,7 +177,7 @@ export function UserStateProvider({ children }: { children: ReactNode }) {
       setChats({});
       setActiveId(base.data.state.profile_id);
       await persist(seeded, {}, base.data.state.profile_id);
-      await refreshToday(forToday(base.data.state));
+      await refreshToday(forToday(base.data.state), seeded, {});
       setReady(true);
     })();
   }, [persist, refreshToday]);
@@ -197,7 +226,7 @@ export function UserStateProvider({ children }: { children: ReactNode }) {
         setActiveId(profileId);
         setError(null);
         await persist(nextStates, chats, profileId);
-        await refreshToday(forToday(target));
+        await refreshToday(forToday(target), nextStates, chats);
         return { ok: true, message: `Active profile: ${profileId}` };
       } finally {
         setBusy(false);
@@ -280,7 +309,7 @@ export function UserStateProvider({ children }: { children: ReactNode }) {
       const nextStates = { ...states, [activeId]: result.data.state };
       setStates(nextStates);
       await persist(nextStates, chats, activeId);
-      await refreshToday(forToday(result.data.state));
+      await refreshToday(forToday(result.data.state), nextStates, chats);
       return { ok: true, message: `Demo response history loaded: ${caseName}` };
     },
     [activeId, chats, persist, refreshToday, state?.scenario, states],
@@ -390,7 +419,7 @@ export function UserStateProvider({ children }: { children: ReactNode }) {
         setChats(importedChats);
         setActiveId(nextActive);
         await persist(importedStates, importedChats, nextActive);
-        await refreshToday(forToday(importedStates[nextActive]));
+        await refreshToday(forToday(importedStates[nextActive]), importedStates, importedChats);
         return { ok: true, message: "Backup imported into this browser." };
       } catch {
         return { ok: false, error: "That file is not valid JSON." };
@@ -408,7 +437,7 @@ export function UserStateProvider({ children }: { children: ReactNode }) {
     setChats({});
     setActiveId(base.data.state.profile_id);
     await persist(seeded, {}, base.data.state.profile_id);
-    await refreshToday(forToday(base.data.state));
+    await refreshToday(forToday(base.data.state), seeded, {});
     return { ok: true, message: "Local data cleared and reset to the seeded demo profile." };
   }, [persist, refreshToday]);
 
@@ -419,7 +448,11 @@ export function UserStateProvider({ children }: { children: ReactNode }) {
       setStates(stored.states);
       setChats((stored.chats as Record<string, ChatMessage[]>) ?? {});
       setActiveId(stored.active_profile_id || DEFAULT_PROFILE_ID);
-      await refreshToday(forToday(stored.states[stored.active_profile_id]));
+      await refreshToday(
+        forToday(stored.states[stored.active_profile_id]),
+        stored.states,
+        (stored.chats as Record<string, ChatMessage[]>) ?? {},
+      );
     }
     setReady(true);
   }, [refreshToday]);

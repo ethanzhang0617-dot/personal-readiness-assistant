@@ -1,3 +1,4 @@
+import { ConfidenceBadge } from "@/components/personal-response";
 import { StatRow } from "@/components/ui/stat-row";
 import type { TrainingRecommendation } from "@/types/api";
 import { cn } from "@/lib/utils";
@@ -39,13 +40,28 @@ export function TrainingDecision({
         ]}
       />
 
+      {/* Shown only when Personal Response actually affected today's decision, so
+          the daily screen never grows a confidence card for its own sake. */}
       {recommendation.adaptation ? (
-        <p className="text-[0.74rem] leading-relaxed text-muted">
-          <span className="font-semibold text-foreground">{recommendation.adaptation.label}</span>
-          {recommendation.adaptation.from && recommendation.adaptation.to
-            ? ` · ${recommendation.adaptation.from} → ${recommendation.adaptation.to} demand`
-            : ""}
-        </p>
+        <div className="space-y-1.5">
+          <p className="text-[0.74rem] leading-relaxed text-muted">
+            <span className="font-semibold text-foreground">{recommendation.adaptation.label}</span>
+            {recommendation.adaptation.direction === "within_tier" ||
+            !recommendation.adaptation.from ||
+            !recommendation.adaptation.to
+              ? ""
+              : ` · ${recommendation.adaptation.from} → ${recommendation.adaptation.to} demand`}
+          </p>
+          {recommendation.recommendation_confidence ? (
+            <p className="flex flex-wrap items-center gap-2 text-[0.72rem] text-muted">
+              Recommendation confidence
+              <ConfidenceBadge confidence={recommendation.recommendation_confidence} />
+            </p>
+          ) : null}
+          {recommendation.adaptation.direction === "within_tier" && recommendation.adaptation.reason ? (
+            <p className="text-[0.72rem] leading-relaxed text-muted">{recommendation.adaptation.reason}</p>
+          ) : null}
+        </div>
       ) : null}
     </section>
   );

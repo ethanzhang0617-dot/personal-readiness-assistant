@@ -43,6 +43,26 @@ export function DecisionTrace({
                 <div className="min-w-0 flex-1">
                   <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-muted">{step.step}</p>
                   <p className="text-[0.86rem] leading-snug">{step.value}</p>
+                  {step.detail ? (
+                    <dl className="mt-1.5 space-y-0.5 text-[0.74rem] leading-relaxed">
+                      <div className="flex gap-2">
+                        <dt className="w-[5rem] shrink-0 text-muted">Evidence</dt>
+                        <dd>{step.detail.evidence}</dd>
+                      </div>
+                      <div className="flex gap-2">
+                        <dt className="w-[5rem] shrink-0 text-muted">Pattern</dt>
+                        <dd>{step.detail.pattern}</dd>
+                      </div>
+                      <div className="flex gap-2">
+                        <dt className="w-[5rem] shrink-0 text-muted">Confidence</dt>
+                        <dd>{step.detail.confidence}</dd>
+                      </div>
+                      <div className="flex gap-2">
+                        <dt className="w-[5rem] shrink-0 text-muted">Adjustment</dt>
+                        <dd>{step.detail.adjustment}</dd>
+                      </div>
+                    </dl>
+                  ) : null}
                 </div>
               </li>
             );

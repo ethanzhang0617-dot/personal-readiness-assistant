@@ -7,6 +7,8 @@
  * | 2 | `{ version: 2, active_profile_id, states, chats }` |
  * | 3 | same as 2, with every session row normalised to carry the optional V1.3 |
  * |   | `response_context` / `response_feedback` keys (default `null`) |
+ * | 3 | and every profile carrying the V1.3 Phase 2 `adaptation_log` |
+ * |   | (default `[]`). A purely additive field, so no version bump or reset. |
  *
  * Rules: never discard user data, never silently reset. An envelope from a *newer*
  * version than this build understands is refused (returns null) so a downgrade
@@ -44,12 +46,18 @@ function normaliseState(raw: unknown): UserState | null {
   const state = asRecord(raw);
   if (!state || typeof state.profile_id !== "string") return null;
   const sessions = Array.isArray(state.training_history) ? state.training_history : [];
+  // V1.3 Phase 2 adds the adaptation log. Missing (older) data becomes an empty
+  // history rather than a reset: the user's check-ins and sessions are untouched.
+  const adaptationLog = Array.isArray(state.adaptation_log)
+    ? (state.adaptation_log as UserState["adaptation_log"])
+    : [];
   return {
     profile_id: state.profile_id,
     scenario: (state.scenario as string | null) ?? null,
     edits: asRecord(state.edits) ?? {},
     check_in: (state.check_in as UserState["check_in"]) ?? null,
     daily_history: Array.isArray(state.daily_history) ? (state.daily_history as UserState["daily_history"]) : [],
+    adaptation_log: adaptationLog,
     training_history: sessions.map((row) => {
       const session = asRecord(row) ?? {};
       // V1.3 keys are added explicitly so the response layer can rely on them.
