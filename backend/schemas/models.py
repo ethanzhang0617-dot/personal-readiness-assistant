@@ -317,6 +317,8 @@ class SessionRow(ApiModel):
     working_sets: float | None = None
     notes: str | None = None
     completed: bool = True
+    #: V1.3 final sprint: the in-session checkpoint recorded for this session.
+    response_calibration: dict[str, Any] | None = None
 
 
 class UserState(ApiModel):
@@ -335,6 +337,8 @@ class UserState(ApiModel):
     training_history: list[SessionRow] = Field(default_factory=list)
     #: V1.3 Phase 2: one meaningful adaptation decision per day (newest last).
     adaptation_log: list[dict[str, Any]] = Field(default_factory=list)
+    #: V1.3 final sprint: the session the user started but has not completed.
+    active_session: dict[str, Any] | None = None
 
 
 class ScenarioInfo(ApiModel):
@@ -462,6 +466,76 @@ class SessionFeedbackRequest(ApiModel):
 
 class PersonalResponseRequest(ApiModel):
     state: UserState
+
+
+# --------------------------------------------------------------------------- #
+# V1.3 final sprint — in-session calibration and the decision explorer
+# --------------------------------------------------------------------------- #
+
+
+class SessionStartRequest(ApiModel):
+    state: UserState
+    prescription_id: str | None = None
+
+
+class CalibrationObservation(ApiModel):
+    """The optional in-session checkpoint. No sleep/HRV/stress question is repeated."""
+
+    effort: Literal["Easier than expected", "As expected", "Harder than expected"] = "As expected"
+    performance: Literal["Better than expected", "As expected", "Worse than expected"] = "As expected"
+    actual_rir: int | None = Field(default=None, ge=0, le=10)
+    note: str | None = Field(default=None, max_length=280)
+
+
+class CalibrationRequest(ApiModel):
+    state: UserState
+    observation: CalibrationObservation
+
+
+class WhatIfRequest(ApiModel):
+    state: UserState
+    lever: Literal["soreness", "recovery", "personal_response"]
+    group: str | None = None
+    level: int | None = Field(default=None, ge=1, le=5)
+
+
+class ActiveSessionResponse(ApiModel):
+    state: UserState
+    active_session: dict[str, Any] | None = None
+    session_trace: list[dict[str, Any]] = Field(default_factory=list)
+    today: dict[str, Any] | None = None
+
+
+class CalibrationResponse(ApiModel):
+    state: UserState
+    calibration: dict[str, Any]
+    session_trace: list[dict[str, Any]] = Field(default_factory=list)
+    history: list[dict[str, Any]] = Field(default_factory=list)
+    summary: dict[str, Any] = Field(default_factory=dict)
+
+
+class ExplorerLeversResponse(ApiModel):
+    levers: list[dict[str, Any]]
+    compared_fields: list[dict[str, str]] = Field(default_factory=list)
+    note: str
+    read_only: bool = True
+
+
+class WhatIfResponse(ApiModel):
+    lever: str | None = None
+    lever_label: str | None = None
+    changed_input: str | None = None
+    change: dict[str, Any] = Field(default_factory=dict)
+    current: dict[str, Any] = Field(default_factory=dict)
+    alternative: dict[str, Any] = Field(default_factory=dict)
+    differences: list[dict[str, Any]] = Field(default_factory=list)
+    changed: bool = False
+    conclusion: str
+    why: list[str] = Field(default_factory=list)
+    current_view: dict[str, Any] = Field(default_factory=dict)
+    alternative_view: dict[str, Any] = Field(default_factory=dict)
+    note: str
+    read_only_note: str
 
 
 class PersonalResponseResponse(ApiModel):

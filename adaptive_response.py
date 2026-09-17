@@ -256,6 +256,11 @@ def build_episodes(profile: Mapping[str, Any], today: date | None = None) -> lis
                 "rir": snapshot.get("recommended_rir"),
                 "exposure_note": snapshot.get("exposure_note"),
             },
+            # V1.3 final sprint: the optional in-session checkpoint, when one was
+            # recorded. Episodes logged without a checkpoint stay valid and simply
+            # carry ``None`` here — no data is rewritten.
+            "calibrated": dict(session["response_calibration"])
+            if isinstance(session.get("response_calibration"), Mapping) else None,
             "performed": {
                 "duration_min": session.get("duration_min"),
                 "session_rpe": session.get("session_rpe"),

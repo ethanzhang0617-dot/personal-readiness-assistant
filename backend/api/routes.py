@@ -9,18 +9,24 @@ from __future__ import annotations
 from datetime import date, datetime, timezone
 from typing import Any, Mapping
 
+import session_calibration
 import ai_engine
+import decision_explorer
 from fastapi import APIRouter, HTTPException, Query
 from training_recommendation_engine import prescription_log_defaults
 
 from backend.schemas.models import (
+    ActiveSessionResponse,
     BaseStateResponse,
+    CalibrationRequest,
+    CalibrationResponse,
     CheckInRequest,
     CheckInRequest2,
     CoachMessageRequest,
     CoachMessageResponse,
     CoachStateRequest,
     DecisionTraceStep,
+    ExplorerLeversResponse,
     HealthResponse,
     InsightsRequest,
     InsightsResponse,
@@ -36,15 +42,18 @@ from backend.schemas.models import (
     ScenarioListResponse,
     SessionLogRequest,
     SessionLogResponse,
+    SessionStartRequest,
     SessionFeedbackRequest,
     StateEnvelope,
     StateRequest,
     TodayResponse,
     TrainingRecommendationSummary,
+    WhatIfRequest,
+    WhatIfResponse,
     WeeklyExposure,
 )
-from backend.services import (coach_service, demo_service, insights_service, readiness_service, response_service,
-                              science_service, state_service, training_service)
+from backend.services import (calibration_service, coach_service, demo_service, explorer_service, insights_service,
+                              readiness_service, response_service, science_service, state_service, training_service)
 
 router = APIRouter(prefix="/api")
 
@@ -74,7 +83,8 @@ def _context(profile_id: str | None, check_in: dict[str, Any] | None = None):
 
 
 def _today_payload(profile: dict[str, Any], assessment: dict[str, Any],
-                   recommendation: dict[str, Any], decision: Mapping[str, Any] | None = None) -> dict[str, Any]:
+                   recommendation: dict[str, Any], decision: Mapping[str, Any] | None = None,
+                   state: state_service.UserState | None = None) -> dict[str, Any]:
     """One Today payload shape, shared by the demo and state endpoints.
 
     V1.3 adds the bounded Personal Response layer on top of the engine's base
@@ -86,6 +96,10 @@ def _today_payload(profile: dict[str, Any], assessment: dict[str, Any],
     summary = response_service.apply_to_summary(base_summary, decision, base_summary.get("rir_guidance"))
     trace = response_service.apply_to_trace(training_service.decision_trace(recommendation), decision)
     readiness_payload = readiness_service.summary(profile, assessment)
+    # The session trace is built from the state's own active session, so it needs
+    # no extra engine run: the decision above is already today's.
+    active = dict(getattr(state, "active_session", None) or {})
+    planned_rir = active.get("planned_rir") or summary.get("rir_guidance")
     return {
         "profile": _profile_summary(profile),
         "readiness": readiness_payload,
@@ -96,6 +110,12 @@ def _today_payload(profile: dict[str, Any], assessment: dict[str, Any],
             "history": training_service.recent_sessions(profile, 8),
         },
         "personal_response": response_service.payload(decision),
+        "active_session": active or None,
+        "session_trace": session_calibration.session_trace(decision, planned_rir, active.get("calibration")),
+        "calibration": {
+            "history": calibration_service.history(state) if state else [],
+            "summary": calibration_service.summary(state) if state else session_calibration.summarise([]),
+        },
         "why": {
             "headline": readiness_payload.get("explanation") or "Readiness and recent training drive today's session.",
             "rationale": list(recommendation.get("rationale") or []),
@@ -304,7 +324,7 @@ def state_today(payload: StateRequest) -> dict[str, Any]:
     profile, assessment, rec, _ = _state_context(payload.state)
     decision = _response_decision(profile, assessment, rec)
     new_state = _record(payload.state, decision)
-    return {"state": new_state, "today": _today_payload(profile, assessment, rec, decision)}
+    return {"state": new_state, "today": _today_payload(profile, assessment, rec, decision, new_state)}
 
 
 @router.post("/state/check-in", response_model=StateEnvelope)
@@ -313,7 +333,7 @@ def state_check_in(payload: CheckInRequest2) -> dict[str, Any]:
     profile, assessment, rec, _ = _state_context(new_state)
     decision = _response_decision(profile, assessment, rec)
     new_state = _record(new_state, decision)
-    return {"state": new_state, "today": _today_payload(profile, assessment, rec, decision)}
+    return {"state": new_state, "today": _today_payload(profile, assessment, rec, decision, new_state)}
 
 
 @router.post("/state/profile", response_model=StateEnvelope)
@@ -322,7 +342,7 @@ def state_profile(payload: ProfileEditRequest) -> dict[str, Any]:
     profile, assessment, rec, _ = _state_context(new_state)
     decision = _response_decision(profile, assessment, rec)
     new_state = _record(new_state, decision)
-    return {"state": new_state, "today": _today_payload(profile, assessment, rec, decision)}
+    return {"state": new_state, "today": _today_payload(profile, assessment, rec, decision, new_state)}
 
 
 @router.post("/state/session", response_model=SessionLogResponse)
@@ -353,16 +373,22 @@ def state_session(payload: SessionLogRequest) -> dict[str, Any]:
     new_state, session = state_service.apply_session(payload.state, details)
     # Capture the compact pre-session snapshot on the logged session.
     snapshot = _snapshot(profile, assessment, rec, decision, snapshot_payload)
-    session = {**session, "response_context": snapshot}
-    new_state = state_service.upsert_session_overlay(new_state, str(session["session_id"]),
-                                                     {"response_context": snapshot})
+    overlay = {"response_context": snapshot}
+    # A checkpoint taken during the session travels with it, so the Response
+    # Episode can show what was calibrated against what was performed.
+    active = dict(payload.state.active_session or {})
+    if active.get("calibration"):
+        overlay["response_calibration"] = dict(active["calibration"])
+    session = {**session, **overlay}
+    new_state = state_service.upsert_session_overlay(new_state, str(session["session_id"]), overlay)
+    new_state = state_service.clear_active_session(new_state)
     updated_profile, updated_assessment, updated_rec, _ = _state_context(new_state)
     updated_decision = _response_decision(updated_profile, updated_assessment, updated_rec)
     new_state = _record(new_state, updated_decision)
     return {
         "state": new_state,
         "session": session,
-        "today": _today_payload(updated_profile, updated_assessment, updated_rec, updated_decision),
+        "today": _today_payload(updated_profile, updated_assessment, updated_rec, updated_decision, new_state),
         "exposure": training_service.exposure(updated_profile, updated_assessment, updated_rec),
         "history": training_service.recent_sessions(updated_profile, 8),
     }
@@ -371,6 +397,11 @@ def state_session(payload: SessionLogRequest) -> dict[str, Any]:
 @router.post("/state/coach", response_model=CoachMessageResponse)
 def state_coach(payload: CoachStateRequest) -> dict[str, Any]:
     profile, assessment, rec, _ = _state_context(payload.state)
+    # In-session calibration facts are answered from the recorded checkpoint.
+    calibration_answer = calibration_service.answer_question(payload.state, payload.question)
+    if calibration_answer:
+        return coach_service.verified_answer(
+            calibration_answer, "Answered from your recorded data. No model wording was used.")
     # Personal Response facts are answered deterministically, so they never reach
     # the AI provider (the AI-01 grounding contract).
     deterministic = response_service.answer_question(
@@ -399,7 +430,7 @@ def state_feedback(payload: SessionFeedbackRequest) -> dict[str, Any]:
     profile, assessment, rec, _ = _state_context(new_state)
     decision = _response_decision(profile, assessment, rec)
     new_state = _record(new_state, decision)
-    return {"state": new_state, "today": _today_payload(profile, assessment, rec, decision)}
+    return {"state": new_state, "today": _today_payload(profile, assessment, rec, decision, new_state)}
 
 
 @router.post("/state/personal-response", response_model=PersonalResponseResponse)
@@ -429,3 +460,67 @@ def personal_response(profile_id: str | None = Query(default=None),
 def state_insights(payload: InsightsRequest) -> dict[str, Any]:
     profile, assessment, rec, _ = _state_context(payload.state)
     return insights_service.build(profile, assessment, rec, payload.window)
+
+
+# --------------------------------------------------------------------------- #
+# V1.3 final sprint — active session, in-session calibration, decision explorer
+# --------------------------------------------------------------------------- #
+
+
+@router.post("/state/session/start", response_model=ActiveSessionResponse)
+def state_session_start(payload: SessionStartRequest) -> dict[str, Any]:
+    """Open the active session with the guidance the product prescribes now."""
+    opened = calibration_service.start(payload.state, payload.prescription_id)
+    new_state = opened["state"]
+    profile, assessment, rec, _ = _state_context(new_state)
+    decision = _response_decision(profile, assessment, rec)
+    return {
+        "state": new_state,
+        "active_session": opened["active_session"],
+        "session_trace": opened["session_trace"],
+        "today": _today_payload(profile, assessment, rec, decision, new_state),
+    }
+
+
+@router.post("/state/session/cancel", response_model=StateEnvelope)
+def state_session_cancel(payload: StateRequest) -> dict[str, Any]:
+    """Discard the active session without logging anything."""
+    new_state = state_service.clear_active_session(payload.state)
+    profile, assessment, rec, _ = _state_context(new_state)
+    decision = _response_decision(profile, assessment, rec)
+    return {"state": new_state, "today": _today_payload(profile, assessment, rec, decision, new_state)}
+
+
+@router.post("/state/session/calibration", response_model=CalibrationResponse)
+def state_session_calibration(payload: CalibrationRequest) -> dict[str, Any]:
+    """Resolve one optional in-session checkpoint into HOLD / EASE / OPTIONAL PUSH."""
+    result = calibration_service.checkpoint(payload.state, payload.observation.model_dump())
+    new_state = result["state"]
+    return {
+        "state": new_state,
+        "calibration": result["calibration"],
+        "session_trace": result["session_trace"],
+        "history": calibration_service.history(new_state),
+        "summary": calibration_service.summary(new_state),
+    }
+
+
+@router.get("/decision-explorer", response_model=ExplorerLeversResponse)
+def decision_explorer_levers() -> dict[str, Any]:
+    """The one-at-a-time what-if levers, and the note that this is not a prediction."""
+    return {
+        "levers": explorer_service.levers(),
+        "compared_fields": [{"key": key, "label": label} for key, label in decision_explorer.COMPARED_FIELDS],
+        "note": decision_explorer.NOTE,
+        "read_only": True,
+    }
+
+
+@router.post("/state/what-if", response_model=WhatIfResponse)
+def state_what_if(payload: WhatIfRequest) -> dict[str, Any]:
+    """Recompute today's decision with exactly one input changed. Read-only."""
+    return explorer_service.explore(payload.state, {
+        "key": payload.lever,
+        "group": payload.group,
+        "level": payload.level,
+    })

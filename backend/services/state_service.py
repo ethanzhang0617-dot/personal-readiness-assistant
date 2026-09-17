@@ -17,7 +17,7 @@ Every scientific step after that is the unmodified engine.
 from __future__ import annotations
 
 from copy import deepcopy
-from datetime import date
+from datetime import date, datetime, timezone
 from typing import Any, Mapping
 
 from profile_store import log_training_session, update_profile, upsert_daily_metric
@@ -230,4 +230,40 @@ def record_adaptation(state: UserState, event: Mapping[str, Any]) -> UserState:
         log.append(dict(event))
     log.sort(key=lambda row: str(row.get("date")))
     payload["adaptation_log"] = log[-90:]
+    return UserState(**payload)
+
+
+# --------------------------------------------------------------------------- #
+# V1.3 — active session (the session the user has started but not completed yet)
+# --------------------------------------------------------------------------- #
+
+
+def start_active_session(state: UserState, plan: Mapping[str, Any]) -> UserState:
+    """Open an active session with the guidance the product is prescribing now.
+
+    The active session is client-owned state, like every other overlay: it holds
+    the starting guidance so an in-session checkpoint can be compared with the
+    plan even after a reload.
+    """
+    payload = state.model_dump()
+    payload["active_session"] = {
+        "started_at": datetime.now(timezone.utc).isoformat(),
+        **{key: value for key, value in plan.items() if value is not None or key == "adjustment"},
+        "calibration": None,
+    }
+    return UserState(**payload)
+
+
+def attach_calibration(state: UserState, event: Mapping[str, Any]) -> UserState:
+    """Record one in-session checkpoint on the active session."""
+    payload = state.model_dump()
+    active = dict(payload.get("active_session") or {})
+    active["calibration"] = dict(event)
+    payload["active_session"] = active
+    return UserState(**payload)
+
+
+def clear_active_session(state: UserState) -> UserState:
+    payload = state.model_dump()
+    payload["active_session"] = None
     return UserState(**payload)
