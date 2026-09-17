@@ -25,7 +25,14 @@ def test_health_reports_engines_and_never_exposes_the_credential(client: TestCli
     assert response.status_code == 200
     payload = response.json()
     assert payload["status"] == "ok"
-    assert payload["api_version"].startswith("1.2.0")
+    # V1.3 service metadata: the current stack is reported, and the historical
+    # Streamlit prototype is no longer described as the reference implementation.
+    assert payload["product_version"] == "1.3"
+    assert payload["api_version"] == "1.3"
+    assert payload["frontend"] == "Next.js"
+    assert payload["backend"] == "FastAPI"
+    assert "reference_implementation" not in payload
+    assert "Streamlit" not in json.dumps(payload)
     assert payload["ai_provider"] == ai_engine.AI_PROVIDER_LABEL
     assert "readiness_engine.assess_readiness" in payload["engines"]
     assert "training_recommendation_engine.recommend_training" in payload["engines"]

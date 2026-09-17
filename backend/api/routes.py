@@ -57,8 +57,12 @@ from backend.services import (calibration_service, coach_service, demo_service, 
 
 router = APIRouter(prefix="/api")
 
-API_VERSION = "1.2.0-phase1"
-REFERENCE_IMPLEMENTATION = "Streamlit V1.1 (app.py) — untouched and still runnable"
+#: Public service metadata. The Streamlit build is a historical prototype and is
+#: deliberately not described here as the current implementation.
+PRODUCT_VERSION = "1.3"
+API_VERSION = "1.3"
+FRONTEND_STACK = "Next.js"
+BACKEND_STACK = "FastAPI"
 ENGINES = [
     "readiness_engine.assess_readiness",
     "training_recommendation_engine.recommend_training",
@@ -194,8 +198,10 @@ def health() -> dict[str, Any]:
     return {
         "status": "ok",
         "service": "personal-readiness-assistant-api",
+        "product_version": PRODUCT_VERSION,
         "api_version": API_VERSION,
-        "reference_implementation": REFERENCE_IMPLEMENTATION,
+        "frontend": FRONTEND_STACK,
+        "backend": BACKEND_STACK,
         "ai_provider": ai_engine.AI_PROVIDER_LABEL,
         "ai_explanations_enabled": ai_engine.ai_coach_enabled(secrets),
         "ai_credential_configured": coach_service.credential_configured(),

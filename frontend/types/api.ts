@@ -322,8 +322,10 @@ export interface WhatIfResponse {
 export interface HealthResponse {
   status: string;
   service: string;
+  product_version: string;
   api_version: string;
-  reference_implementation: string;
+  frontend: string;
+  backend: string;
   ai_provider: string;
   ai_explanations_enabled: boolean;
   ai_credential_configured: boolean;

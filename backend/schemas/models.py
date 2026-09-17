@@ -21,8 +21,10 @@ class ApiModel(BaseModel):
 class HealthResponse(ApiModel):
     status: Literal["ok"] = "ok"
     service: str = "personal-readiness-assistant-api"
+    product_version: str
     api_version: str
-    reference_implementation: str
+    frontend: str
+    backend: str
     ai_provider: str
     ai_explanations_enabled: bool
     ai_credential_configured: bool
