@@ -98,6 +98,25 @@
   font-variant-numeric: tabular-nums;
 }
 
+/*
+ * Consumer refresh: the decision carries the largest type on a screen, the
+ * status stays quiet above it, and evidence never competes with either.
+ */
+@utility title-decision {
+  font-size: clamp(1.9rem, 7.4vw, 2.3rem);
+  font-weight: 640;
+  letter-spacing: -0.028em;
+  line-height: 1.05;
+}
+
+@utility title-metric {
+  font-size: 1.35rem;
+  font-weight: 620;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
 @utility title-page {
   font-size: 1.6rem;
   font-weight: 620;
@@ -112,11 +131,21 @@
   line-height: 1.3;
 }
 
-/* Labels are used sparingly: a small caps-ish kicker, never a paragraph. */
+/*
+ * Labels are used sparingly. `label-quiet` is the default for a small caption;
+ * `eyebrow` (all caps) is reserved for a screen-level kicker so the interface
+ * does not open every block with a tiny uppercase tag.
+ */
+@utility label-quiet {
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--color-muted);
+}
+
 @utility eyebrow {
-  font-size: 0.75rem;
+  font-size: 0.72rem;
   font-weight: 600;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--color-muted);
 }
