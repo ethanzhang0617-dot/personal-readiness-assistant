@@ -938,7 +938,8 @@ def test_ai_case_4_and_5_training_load_versus_session_duration() -> None:
     load_answer, _ = _ask("What's my training load today?", profile, real_assessment, rec)
     load = real_assessment["measurements"]["training_load"]["recent_7d_mean"]
     assert f"{load:g}" in load_answer
-    assert "au" in load_answer.casefold()
+    # V1.3 consumer terminology: the same metric is shown as Training Load Points.
+    assert "pts" in load_answer.casefold()
     assert "duration x session rpe" in load_answer.casefold()
     assert rec["duration"] not in load_answer
 
@@ -1096,7 +1097,9 @@ def test_ai_fact_prompt_never_exposes_bare_numbers() -> None:
     assert "Current seven-day exposure:" not in prompt
     assert "NOT days and NOT sessions" in prompt
     assert "training days" in prompt and "completed sessions" in prompt
-    assert "AU" in prompt and "Training load is NOT session duration" in prompt
+    # V1.3 consumer terminology: the user-facing unit is "pts" (Training Load
+    # Points). The metric itself is unchanged (duration × session RPE).
+    assert "pts" in prompt and "Training load is NOT session duration" in prompt
 
 
 def test_ai_explanation_grounding_guard_rejects_invented_rationale() -> None:

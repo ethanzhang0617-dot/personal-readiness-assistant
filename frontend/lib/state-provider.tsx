@@ -284,7 +284,8 @@ export function UserStateProvider({ children }: { children: ReactNode }) {
         return {
           state: result.data.state,
           today: result.data.today,
-          message: `Logged ${result.data.session.primary_focus} · ${result.data.session.session_load} AU.`,
+          // Consumer unit: Training Load Points (the metric is unchanged).
+          message: `Logged ${result.data.session.primary_focus} · ${result.data.session.session_load} pts.`,
           sessionId: String(result.data.session.session_id),
         };
       }),

@@ -71,7 +71,7 @@ def build(profile: Mapping[str, Any], assessment: Mapping[str, Any],
                 baseline.get("rhr_mean"), note),
         _series("sleep_hours", "Sleep", "hours", dates, column("sleep_hours"),
                 baseline.get("sleep_mean"), note),
-        _series("session_load", "Training load", "AU", dates, column("session_load"),
+        _series("session_load", "Training load", "pts", dates, column("session_load"),
                 None, "Duration × session RPE per day. Not minutes and not sets."),
     ]
 

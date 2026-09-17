@@ -42,21 +42,26 @@ class Unit:
 
 UNITS: dict[str, Unit] = {
     "weighted_working_sets": Unit("weighted_working_sets", "weighted working set", "weighted working sets",
-                                  ("day", "days", "session", "sessions", "minute", "minutes", "hour", "hours", "bpm", "au")),
+                                  ("day", "days", "session", "sessions", "minute", "minutes", "hour", "hours", "bpm", "au",
+                                   "point", "points")),
     "working_sets": Unit("working_sets", "working set", "working sets",
                          ("day", "days", "minute", "minutes", "hour", "hours", "bpm")),
     "sessions": Unit("sessions", "session", "sessions", ("day", "days", "set", "sets", "minute", "minutes")),
     "training_days": Unit("training_days", "training day", "training days",
-                          ("set", "sets", "minute", "minutes", "hour", "hours", "au")),
-    "minutes": Unit("minutes", "minute", "minutes", ("set", "sets", "day", "days", "au", "load")),
-    "hours": Unit("hours", "hour", "hours", ("set", "sets", "minute", "minutes", "au")),
+                          ("set", "sets", "minute", "minutes", "hour", "hours", "au", "point", "points")),
+    "minutes": Unit("minutes", "minute", "minutes", ("set", "sets", "day", "days", "au", "load", "point", "points")),
+    "hours": Unit("hours", "hour", "hours", ("set", "sets", "minute", "minutes", "au", "point", "points")),
     "ms": Unit("ms", "millisecond", "milliseconds", ("bpm", "beats per minute")),
     "bpm": Unit("bpm", "beat per minute", "beats per minute", ("millisecond", "milliseconds", "ms")),
     "rpe": Unit("rpe", "RPE point", "RPE points", ("rir",)),
     "rir": Unit("rir", "RIR", "RIR", ("rpe",)),
     "readiness_index": Unit("readiness_index", "index point", "index points",
                             ("set", "sets", "minute", "minutes", "au", "bpm", "ms")),
-    "training_load_au": Unit("training_load_au", "arbitrary unit", "arbitrary units",
+    # V1.3 consumer terminology: the metric is unchanged (duration × session RPE);
+    # only the user-facing unit is "pts" (Training Load Points) instead of "AU".
+    # "au" stays in the other units' forbidden lists and "point(s)" is added there
+    # too, so the same wrong-unit contamination is still detected.
+    "training_load_au": Unit("training_load_au", "point", "points",
                              ("minute", "minutes", "hour", "hours", "set", "sets", "day", "days")),
     "confidence_label": Unit("confidence_label", "confidence level", "confidence level", ()),
     "status_label": Unit("status_label", "status", "status", ()),
@@ -70,6 +75,9 @@ def format_quantity(value: float | int, unit_id: str) -> str:
     label = unit.singular if abs(float(value) - 1) < 1e-9 else unit.plural
     if unit_id == "bpm":
         return f"{number} bpm"
+    if unit_id == "training_load_au":
+        # Consumer-facing abbreviation for Training Load Points.
+        return f"{number} pts"
     return f"{number} {label}"
 
 
@@ -365,8 +373,8 @@ def facts_for_prompt(facts: Mapping[str, Any]) -> str:
                  f"resting HR {rhr['value']} bpm (z {rhr['z_score']}, status {rhr['status']}); "
                  f"sleep {sleep['value']} hours against a personal need of {sleep['need']} hours (status {sleep['status']}).")
     load = facts["training_load"]
-    lines.append(f"Training load for {load['period']}: {load['value']} AU mean daily load "
-                 f"(compared with {load['comparison']}: {load['reference_value']} AU). Definition: {load['definition']}. "
+    lines.append(f"Training load for {load['period']}: {load['value']} pts mean daily load "
+                 f"(compared with {load['comparison']}: {load['reference_value']} pts). Definition: {load['definition']}. "
                  f"Training load is NOT session duration.")
     soreness = facts["local_soreness"]
     reported = ", ".join(f"{group} {value}/5" for group, value in soreness["groups"].items()) or "not reported"
@@ -600,8 +608,8 @@ def grounded_answer(route: Route, facts: Mapping[str, Any]) -> str:
         if load["value"] is None:
             return "Training load is not available yet - it needs completed sessions with duration and session RPE."
         return (f"Your training load is **{format_quantity(load['value'], 'training_load_au')}** (mean daily load over "
-                f"{load['period']}), compared with {load['reference_value']} AU over {load['comparison']}. "
-                f"Training load is duration x session RPE in arbitrary units - it is not minutes and not sets.")
+                f"{load['period']}), compared with {load['reference_value']} pts over {load['comparison']}. "
+                f"Training Load Points are duration x session RPE - they are not minutes and not sets.")
     if metric == "recommendation":
         recommendation = facts["recommendation"]
         if not recommendation["primary"]:
