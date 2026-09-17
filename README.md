@@ -28,11 +28,18 @@ Open <http://localhost:3000>.
 | Do I need an API key? | No. Without `DEEPSEEK_API_KEY` everything works and explanation questions return the deterministic answer. |
 | How do I configure the key safely? | Put `DEEPSEEK_API_KEY` in `.streamlit/secrets.toml` (gitignored) or the environment, on the **backend** only. Never in a `NEXT_PUBLIC_*` variable. |
 | Demo scenarios | Profile → Demo controls: three fixed simulated check-ins (well recovered / moderate fatigue / high load) plus the three demo profiles. |
-| Tests | `python3 -m pytest -v` (161 tests) and `cd frontend && pnpm lint && pnpm typecheck && pnpm build`. |
+| Tests | `python3 -m pytest -v` (209 tests) and `cd frontend && pnpm lint && pnpm typecheck && pnpm build && pnpm check:store`. |
+
+V1.3 adds the Adaptive Decision Loop on top of the same engines: post-session feedback, response
+episodes, the Personal Response Profile, qualitative Recommendation Confidence
+Limited / Developing / Strong (never a percentage), evidence coverage, adaptation history and an
+honest within-tier alternative to the upward tier change the product cannot perform.
+See `docs/V1_3_ADAPTIVE_DECISION_LOOP.md`.
 
 Full documentation: `docs/V1_2_DEPLOYMENT.md` (deployment and environment),
 `docs/V1_2_RELEASE_QA.md` (QA record), `docs/V1_2_FRONTEND_MIGRATION.md` (migration),
-`docs/V1_2_FUNCTIONAL_PARITY.md` (Streamlit comparison), `docs/V1_2_UI_POLISH.md` (design system).
+`docs/V1_2_FUNCTIONAL_PARITY.md` (Streamlit comparison), `docs/V1_2_UI_POLISH.md` (design system),
+`docs/V1_3_ADAPTIVE_DECISION_LOOP.md` (V1.3 adaptive decision loop), `docs/CODEX_HANDOFF.md` (session handoff).
 
 ## V1.1 reference implementation (Streamlit)
 

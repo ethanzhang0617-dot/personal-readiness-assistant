@@ -13,13 +13,11 @@
 
 | 项目 | 值 |
 |---|---|
-| Branch | `v1.1-productization` |
-| Latest product commit | `6548e08` `fix(ai): recognize readiness index scale in grounding` |
-| 迁移 commit | `4f27d22` `feat(ai): migrate coach explanations to DeepSeek` |
-| 上一阶段 product commit | `c41485d` `feat(coach): refine conversational interface` |
-| Dependency cleanup commit | `fe732fc` `chore(ai): remove local qwen runtime dependencies` |
-| Handoff commit | 见本文件所在 commit（`docs: update ai provider and privacy disclosure`） |
-| Test baseline | `python -m pytest -v` → **133 passed** |
+| Branch | `v1.3-adaptive-decision-loop` |
+| 已冻结基线 | `v1.2-nextjs-migration` = `7d21568`（V1.2 RC）· `v1.1-productization` = `0c42048` · `main` = `fe09ab6` · tag 仅 `v1.0.0` |
+| V1.3 Phase 1（已推送） | `673010f` `docs: document the adaptive decision loop phase 1` |
+| V1.3 Phase 2（本地未 push） | 见本文件所在 commit（`docs: record adaptive loop phase 2`） |
+| Test baseline | `python -m pytest -v` → **209 passed**（`test_app.py` 139 · `test_adaptive.py` 31 · `test_api.py` 39） |
 | Compile | `python -m compileall .` → PASS |
 | GitHub remote (`origin`) | `https://github.com/ethanzhang0617-dot/personal-readiness-assistant.git` |
 | Tags | 仅 `v1.0.0`（V1.1 未打 tag、未发 Release） |
@@ -155,7 +153,7 @@ Decision Trace **不是** LLM chain-of-thought，也不是 debug log；它是产
 * `How much have I trained back this week?` 及所有 personal factual / correction 轮次对 provider 的调用数必须为 **0**。
 * 模型草稿若新增未记录数字、改单位、改周期、替换 primary recommendation 或编造 rationale，必须被 guard 拦截。
 
-# Frontend Migration Status（V1.3 Phase 1 Adaptive Decision Loop，本地未 push）
+# Frontend Migration Status（V1.3 Phase 2 Adaptive Decision Loop，本地未 push）
 
 * 分支：`v1.3-adaptive-decision-loop`（自 V1.2 RC `7d21568` 创建）。V1.2 RC 已冻结在 GitHub
   （`v1.2-nextjs-migration` = `7d21568`），main / v1.1 / v1.0.0 tag 均未触碰。
@@ -173,6 +171,47 @@ Decision Trace **不是** LLM chain-of-thought，也不是 debug log；它是产
   `pnpm check:store` 11/11 迁移断言通过；V1.3 端到端 **19/19**（Chromium 与 WebKit 各一轮）；
   跨引擎响应式 **54/54**。
 * 细节见 `docs/V1_3_ADAPTIVE_DECISION_LOOP.md`。
+
+## V1.3 Phase 2 — Personal Response Profile & Recommendation Confidence（本地未 push）
+
+* **Personal Response Profile**：按 demand band（Low / Moderate / High）给出观测数、证据状态、
+  `poorer / as expected / good` 计数、整体 pattern 与 recent pattern；**按 training focus 的 pattern
+  只有在该 focus 已有 ≥3 个完整情节时才显示**，绝不编造类别。
+* **Recommendation Confidence**：三态定性词汇 **Limited / Developing / Strong**（<3 相关情节 → Limited；
+  3–5，或 6+ 但 pattern 不一致 → Developing；6+ 且一致 → Strong）。**不是概率、不是恢复分数、不显示百分比**，
+  也不影响 readiness index、GREEN/AMBER/RED 或 safety routing。
+* **Evidence coverage**：完整情节数、等待次日签到的情节数、最近一次完整情节、各 band 的观测数。
+* **Consistency**：相关情节方向一致度（≥3 个情节且 ≥60% 同向 → Consistent，否则 Mixed）；tie-break 顺序固定，
+  保证同一输入得到同一 leader。
+* **Recency**：透明启发式（非指数衰减）——只有 `RECENT_WINDOW_DAYS = 56` 天内、最新 `MAX_RECENT_EPISODES = 12`
+  个情节可以驱动今日判断；**旧情节不会消失**，仍留在 history、profile 计数与 Insights 中，只是不再影响今天。
+* **Adaptation history**：客户端 state 内 `adaptation_log`（按日期 upsert，上限 90），记录 base/final demand、
+  adjustment、result（reduced / raised / within_tier / no_change）、confidence、evidence、相关情节数与原因；
+  只记录"有意义的决策事件"，不记录内部计算。
+* **不可达的向上调整已诚实处理**：Phase 1 的 `Moderate → High` 档位提升在真实产品路径中不可达（引擎的 demand
+  本身就是 readiness 允许的档位），Phase 2 **删除该规则**，改为**档位内个性化**（within-tier）：证据 Strong +
+  持续耐受良好 + readiness GREEN + 无 safety/酸痛问题时，给出"在既有 RIR 区间内取更靠硬端"的**可选**提示；
+  条件不满足时用产品语言说明原因；确实没有安全档位内选项时使用明确的 ceiling 文案。
+  **产品不再宣称任何无法执行的向上适应**，测试与文档同步。
+* **演示修正**：`demo_seed(profile, case, base_demand)` 现在按"产品今天实际开出的 demand"写入演示情节
+  （Phase 1 把部分案例写成 `Reduced / autoregulated`，导致当前 High 推荐的相关情节为 0、演示显示
+  "Limited evidence" 却声称在展示 established pattern）。四个演示态：Not enough history（Limited）/
+  Emerging pattern（Developing）/ Poor tolerance（Developing + High→Moderate）/ Established good tolerance
+  （Strong + within-tier，档位不变）。
+* **前端**：Today 仅在 Personal Response 真正影响决策时显示一行紧凑的 `Recommendation confidence`；
+  Decision Trace 的 PERSONAL RESPONSE 步骤新增 Evidence / Pattern / Confidence / Adjustment 结构化明细；
+  Insights 新增 Personal Response Profile / Evidence Coverage / Recent Response Episodes / Adaptation History；
+  Coach 新增确定性提问 starter（信心、支撑情节数、是否调整过、为何不增加）。
+* **修复的真实缺陷**：前端 `refreshToday` 之前丢弃了 `/api/state/today` 返回的 state，导致
+  `adaptation_log` 永远进不了浏览器存储（Adaptation History 会一直是空的）。现在刷新时会把返回的 state
+  并入并按 profile 持久化，同时保留被展示层隐藏的昨日 `check_in`，避免计算往返抹掉用户数据。
+* **存储**：schema 仍为 **v3**（`adaptation_log` 是纯增量可选字段，默认 `[]`，不升版本、不重置、
+  V1.2 与 V1.3 Phase 1 数据原样保留）；`pnpm check:store` 11 → **14/14**。
+* **测试**：**209 / 209 PASS**（188 基线 + 12 自适应层 + 9 API）；`test_adaptive.py` 31 项、
+  `test_api.py` 39 项。前端 typecheck / lint / build 全绿；V1.3 Phase 2 端到端 **31/31**、
+  Phase 1 端到端 **19/19**、V1.2 功能 parity **20/20**（Chromium 与 WebKit 各一轮）；
+  跨引擎响应式 **54/54**；视觉 QA 45 个 路由×视口 组合全部通过（横向溢出 0px）。
+* 细节见 `docs/V1_3_ADAPTIVE_DECISION_LOOP.md`（§14–§20）。
 
 * Phase 4 = **发布就绪**（无新功能）：运行时配置（`frontend/.env.example` 单一样本；后端环境变量见
   `docs/V1_2_DEPLOYMENT.md`）、CORS 生产配置说明、跨引擎 QA、API/AI 不可用行为、导入安全、部署文档、
@@ -257,8 +296,10 @@ password/credential、私钥块、AWS/GitHub token 等模式），发现真实�
 确认必需源文件与示例配置存在、并解包到临时目录做基本健全性检查
 （至少 `python3 -m compileall .` 与 `python3 -m pytest` 在解包副本中通过）。
 
-当前基线交付物：`Personal_Readiness_Assistant_V1.2_Phase4_Release_Candidate.zip`（353 KB，
-153 条目，密钥扫描 120 个跟踪文件 0 命中，解包副本 161/161 测试通过）。
+当前基线交付物：`Personal_Readiness_Assistant_V1.3_Phase2_Personal_Response.zip`（416 KB，
+164 条目，密钥扫描 130 个跟踪文件 0 命中，解包副本 `compileall` PASS + 209/209 测试通过 +
+`pnpm check:store` 14/14）。上一阶段交付物为
+`Personal_Readiness_Assistant_V1.2_Phase4_Release_Candidate.zip`（353 KB，153 条目）。
 
 # Science & References（V1.1 audit，2026-09-16）
 
@@ -348,8 +389,10 @@ password/credential、私钥块、AWS/GitHub token 等模式），发现真实�
 
 # Test Baseline
 
-`python -m compileall .` → PASS；`python -m pytest -v` → **161 / 161 passed**
-（139 项 Streamlit/engine 回归 + 22 项 FastAPI 适配层，见 `test_api.py`）。
+`python -m compileall .` → PASS；`python -m pytest -v` → **209 / 209 passed**
+（139 项 Streamlit/engine 回归 + 31 项 V1.3 自适应层 `test_adaptive.py` + 39 项 FastAPI 适配层 `test_api.py`）。
+
+前端：`pnpm lint` · `pnpm typecheck` · `pnpm build` · `pnpm check:store`（14/14）全部 PASS。
 
 关键 regression 区域：mobile shell 间距契约与 chrome 选择器 · Today 首屏（Readiness / Training / Session Demand / CTA）·
 Train 的 primary 与 alternatives 层级 + 8 步 decision trace · 档案切换与 Demo/Local 隔离 · IndexedDB 写入/刷新/恢复 ·
@@ -433,6 +476,18 @@ V1.1 已完成较完整的 visual polish（颜色角色、排版、卡片、间�
 19. Readiness Index 量表上界（`100`）**只能紧跟在已核实的 index 数值之后出现**（`71/100`、`71 on a 0–100 scale`）。
     禁止把它变成全局白名单：`100 minutes`、`100 weighted working sets`、`100 bpm`、`100 ms`、
     以及 `83/100` 这类新 index 数值仍必须被拒绝。`facts_numbers()` 必须继续跳过 `index_scale`。
+20. **Base recommendation 与 final recommendation 永远分开呈现**，不得合并成一个不可解释的输出；
+    base 始终是引擎自己的结论。
+21. **Personal Response 不得改变 WHAT TO TRAIN、safety routing、training load、weekly exposure 或科学阈值**；
+    最多只能在 readiness 已允许的程度上调整 HOW HARD，且最多一个档位。
+22. **Recommendation Confidence 只能是定性状态**（Limited / Developing / Strong），
+    不得显示为百分比、概率、临床信心、伤病或恢复概率，也不得影响 readiness index 或 GREEN/AMBER/RED。
+23. **不得宣称产品无法执行的适应行为**。V1.3 Phase 2 已删除不可达的向上档位提升；
+    任何"升档"文案都必须先证明该路径真实可达，否则必须改为档位内个性化或明确的不增加说明。
+24. **演示数据必须服从产品规则**：demo case 只能展示真实规则会产生的状态，不得用与当前 demand 不匹配的数据
+    伪装出某个证据状态。
+25. Recency policy 只影响"哪些情节可以驱动今天"，**不得静默丢弃旧情节**——旧情节必须继续出现在 history、
+    profile 计数与 Insights 中。
 
 # Do Not Resurrect Without Explicit Decision
 
@@ -447,6 +502,11 @@ V1.1 已完成较完整的 visual polish（颜色角色、排版、卡片、间�
   本地推理路径已删除。若未来需要离线模型，必须作为显式的新决策重新评估，而不是"顺手加回来"。
 * 不要因为 DeepSeek 更强就删除或放宽 grounding guard，也不要让 provider 成为 source of truth。
 * 不要在 pytest 中调用真实 DeepSeek API。
+* **不要把 Phase 1 的向上档位提升（`Moderate → High`）加回来**：它在真实产品路径中不可达，
+  Phase 2 已用 within-tier personalization 与明确的不增加说明替代。要重新引入，必须先证明
+  readiness 允许该档位，并作为显式产品决策重新评估。
+* **不要给 Recommendation Confidence 加上百分比或数值分数**，也不要把它接进 readiness 计算。
+* 不要在 UI 里重新计算 Personal Response 的任何数值；所有结论必须来自后端结构化字段。
 
 # Product Roadmap
 
@@ -460,28 +520,45 @@ Personal Fact Resolver、Grounding Guard 全部保留。详见 `docs/V1_1_DEEPSE
 延迟中位数 2.9 s。live QA 发现的 readiness 量表 guard 误报（`71/100` 被当成幻觉数字）已修复，
 EXPLANATION 接受率 0/5 → 4/5。剩余问题见 `docs/V1_1_DEEPSEEK_MIGRATION.md` 的 observed issues。
 
-**FUTURE PRODUCT STEP — V1.2 Adaptive Decision Loop（尚未实现）**
-Post-session feedback · Actual session response · Personal Response Profile · Recommendation Confidence ·
+**DONE — V1.2 产品化与前端迁移**
+Next.js + FastAPI 迁移完成，四个 Phase 全部通过；V1.2 RC 冻结在 `v1.2-nextjs-migration` = `7d21568`。
+详见 `docs/V1_2_FRONTEND_MIGRATION.md`、`docs/V1_2_RELEASE_QA.md`。
+
+**DONE — V1.3 Phase 1 Adaptive Decision Loop（已推送 `673010f`）**
+Response Episodes · Post-session feedback · Next-day linking · Personal Response ·
+有界向下调整（≤1 档）· Decision Trace 的 PERSONAL RESPONSE 步骤 · Coach 确定性事实回答。
+
+**DONE — V1.3 Phase 2 Personal Response Profile & Recommendation Confidence（本地，未 push）**
+Personal Response Profile（按 demand band，按 focus 需 ≥3 情节）· Recommendation Confidence
+（Limited / Developing / Strong，定性、非概率）· Evidence Coverage · Consistency · Recency policy ·
+Adaptation History · 不可达向上调整的诚实替代（within-tier personalization）。
+
+**FUTURE PRODUCT STEP — V1.3 Phase 3（尚未开始）**
 In-session Calibration · What-if / Counterfactual Decision Explorer。
 
-# Adaptive Decision Loop Vision（FUTURE / NOT IMPLEMENTED）
+# Adaptive Decision Loop（Phase 1 与 Phase 2 已实现，Phase 3 未实现）
 
 ```
 Understand today → Recommend → Perform session → Observe actual response
 → Learn personal response → Improve next decision
 ```
 
-产品演进主线：**Personal Baseline → Personal Response**。以上均未实现。
+产品演进主线：**Personal Baseline → Personal Response**。
+Phase 1（响应情节 / 有界调整 / Decision Trace / Coach）与 Phase 2（Profile / Confidence /
+Coverage / Consistency / Recency / Adaptation History / within-tier）**均已实现**；
+Phase 3 的 In-session Calibration 与 What-if Explorer **尚未实现**。
 
 # Wearable Roadmap（FUTURE / NOT IMPLEMENTED）
 
 Apple Health / Garmin / WHOOP / Oura 属于后期数据入口，核心价值是**降低手动输入摩擦**，
 不是产品创新本身。当前 demo 不实现任何 wearable 集成。
 
-# Production Frontend（FUTURE / NOT DECIDED）
+# Production Frontend（DONE — V1.2）
 
-可能的演进方向：React / Next.js frontend → API layer → 复用现有 Python engines。
-原因是 Streamlit 已接近 presentation-layer 的视觉上限。**当前没有进行 migration，也没有决定必须执行。**
+已完成：Next.js 16 App Router frontend → FastAPI 无状态计算层 → 复用现有 Python engines
+（readiness / recommendation / exposure / safety / Decision Trace / `ai_facts` / `ai_engine` 全部未修改）。
+Streamlit V1.1 **仍然保留且可运行**，是 reference implementation，不再是日常演示路径。
+细节见 `docs/V1_2_FRONTEND_MIGRATION.md` 与 `docs/V1_2_DEPLOYMENT.md`。
 
 # New Codex Session Boot Procedure
 
@@ -494,6 +571,6 @@ Apple Health / Garmin / WHOOP / Oura 属于后期数据入口，核心价值是*
 5. 确认最新 baseline（branch / commit / tests）。
 6. `python -m compileall .`
 7. `python -m pytest -v`
-8. 确认 test baseline（当前应为 161 passed，其中 `test_api.py` 22 项）。
+8. 确认 test baseline（当前应为 **209 passed**：`test_app.py` 139 · `test_adaptive.py` 31 · `test_api.py` 39）。
 9. **不要修改任何代码。**
 10. 先汇报理解，然后等待用户的下一条指令。
