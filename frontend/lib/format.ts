@@ -46,3 +46,13 @@ export function formatNumber(value: number | null | undefined, digits = 1): stri
   if (value === null || value === undefined) return "—";
   return Number.isInteger(value) ? String(value) : value.toFixed(digits).replace(/\.0$/, "");
 }
+
+/**
+ * The engines label their steps in upper case ("WEEKLY EXPOSURE"). The consumer
+ * interface reads as editorial sentence case instead, so all-caps labels stay
+ * rare. Values are never transformed — only these labels.
+ */
+export function sentenceCase(value: string): string {
+  const lower = value.toLowerCase();
+  return lower.charAt(0).toUpperCase() + lower.slice(1);
+}

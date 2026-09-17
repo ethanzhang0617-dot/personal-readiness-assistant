@@ -1,7 +1,6 @@
 "use client";
 
-import { ChevronRight } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Segmented } from "@/components/ui/segmented";
@@ -12,9 +11,10 @@ import { cn } from "@/lib/utils";
 
 // What-if / Decision Explorer.
 //
-// One factor at a time, recomputed by the SAME deterministic rules, shown next to
-// the current decision. It is a rule explorer, never a prediction, and the API it
-// calls returns no state, so nothing here can change what is saved.
+// One factor at a time, recomputed by the SAME deterministic rules. The reading
+// order is current → change → alternative → one short reason; the engine's own
+// field-by-field comparison stays behind "Why →". It is a rule explorer, never a
+// prediction, and nothing here is saved.
 
 export function DecisionExplorer({ className }: { className?: string }) {
   const { runWhatIf, busy } = useUserState();
@@ -25,12 +25,17 @@ export function DecisionExplorer({ className }: { className?: string }) {
   const [result, setResult] = useState<WhatIfResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const load = async () => {
-    if (levers) return;
-    const [leverResult, optionResult] = await Promise.all([api.explorerLevers(), api.profileOptions()]);
-    if (leverResult.ok) setLevers(leverResult.data.levers);
-    if (optionResult.ok) setGroups(optionResult.data.muscle_groups);
-  };
+  useEffect(() => {
+    let cancelled = false;
+    void Promise.all([api.explorerLevers(), api.profileOptions()]).then(([leverResult, optionResult]) => {
+      if (cancelled) return;
+      if (leverResult.ok) setLevers(leverResult.data.levers);
+      if (optionResult.ok) setGroups(optionResult.data.muscle_groups);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const compare = async () => {
     setError(null);
@@ -40,29 +45,15 @@ export function DecisionExplorer({ className }: { className?: string }) {
   };
 
   const selected = levers?.find((item) => item.key === leverKey) ?? null;
+  const changeDetail = result
+    ? Object.entries(result.change ?? {})
+        .map(([key, value]) => `${key.replace(/_/g, " ")} ${String(value)}`)
+        .join(" · ")
+    : "";
 
   return (
-    <details
-      className={cn("group", className)}
-      onToggle={(event) => {
-        if ((event.target as HTMLDetailsElement).open) void load();
-      }}
-    >
-      <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 text-sm font-semibold">
-        <span>Decision explorer</span>
-        <span className="flex items-center gap-2 text-[0.72rem] font-normal text-muted">
-          What if one input were different?
-          <ChevronRight className="h-4 w-4 transition-transform group-open:rotate-90" aria-hidden />
-        </span>
-      </summary>
-
-      <div className="space-y-4 pt-3">
-        <p className="text-[0.76rem] leading-relaxed text-muted">
-          Under the current rules, if this one condition were different, what would the product decide? It re-runs the
-          same deterministic rules with one input changed. It is not a prediction, and it does not change anything you
-          have saved.
-        </p>
-
+    <div className={cn("space-y-5", className)}>
+      <div className="space-y-3">
         {levers ? (
           <Segmented
             options={levers.map((item) => ({ value: item.key, label: item.label }))}
@@ -76,11 +67,9 @@ export function DecisionExplorer({ className }: { className?: string }) {
           />
         ) : null}
 
-        {selected ? <p className="text-[0.72rem] text-muted">{selected.description}</p> : null}
-
         {leverKey === "soreness" && groups.length > 0 ? (
           <label className="block">
-            <span className="text-[0.72rem] font-medium">Muscle group</span>
+            <span className="label-quiet">Muscle group</span>
             <select
               value={group || groups[0]}
               onChange={(event) => {
@@ -98,61 +87,75 @@ export function DecisionExplorer({ className }: { className?: string }) {
           </label>
         ) : null}
 
-        <Button size="md" variant="secondary" className="w-full" disabled={busy || !levers} onClick={() => void compare()}>
+        <Button size="md" className="w-full" disabled={busy || !levers} onClick={() => void compare()}>
           {busy ? "Comparing…" : "Compare with the current decision"}
         </Button>
-
-        {error ? <p className="text-[0.75rem] text-[var(--status-red)]">{error}</p> : null}
-
-        {result ? (
-          <div className="space-y-3 border-t border-subtle pt-3">
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="rounded-[var(--radius-control)] border border-subtle p-3">
-                <p className="eyebrow">Current</p>
-                <p className="mt-1 text-[0.84rem] font-semibold">{result.current.session_demand ?? "—"}</p>
-                <p className="text-[0.72rem] text-muted">
-                  {result.current.primary_focus ?? "—"} · {result.current.personal_response_adjustment}
-                </p>
-              </div>
-              <div className="rounded-[var(--radius-control)] border border-subtle bg-surface-muted p-3">
-                <p className="eyebrow">If {result.changed_input ?? "changed"}</p>
-                <p className="mt-1 text-[0.84rem] font-semibold">{result.alternative.session_demand ?? "—"}</p>
-                <p className="text-[0.72rem] text-muted">
-                  {result.alternative.primary_focus ?? "—"} · {result.alternative.personal_response_adjustment}
-                </p>
-              </div>
-            </div>
-
-            <p className="text-[0.8rem] leading-relaxed">{result.conclusion}</p>
-
-            {result.differences.length > 0 ? (
-              <ul className="divide-y divide-subtle border-y border-subtle">
-                {result.differences.map((row) => (
-                  <li key={row.key} className="flex items-start justify-between gap-3 py-2 text-[0.76rem]">
-                    <span className="text-muted">{row.label}</span>
-                    <span className="min-w-0 text-right">
-                      {String(row.current ?? "—")} → <span className="font-medium">{String(row.alternative ?? "—")}</span>
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            ) : null}
-
-            {result.why.length > 0 ? (
-              <ul className="space-y-1">
-                {result.why.slice(0, 4).map((line) => (
-                  <li key={line} className="text-[0.74rem] leading-relaxed text-muted">
-                    {line}
-                  </li>
-                ))}
-              </ul>
-            ) : null}
-
-            <p className="text-[0.68rem] leading-relaxed text-muted">{result.note}</p>
-            <p className="text-[0.68rem] leading-relaxed text-muted">{result.read_only_note}</p>
-          </div>
-        ) : null}
       </div>
-    </details>
+
+      {error ? <p className="text-[0.78rem] text-[var(--status-red)]">{error}</p> : null}
+
+      {result ? (
+        <div className="surface px-5 py-5">
+          <dl className="grid grid-cols-3 gap-x-4">
+            <div className="min-w-0">
+              <dt className="label-quiet">Current</dt>
+              <dd className="mt-1 text-[0.95rem] font-semibold">{result.current.session_demand ?? "—"}</dd>
+              <dd className="mt-0.5 truncate text-[0.72rem] text-muted">{result.current.primary_focus ?? "—"}</dd>
+            </div>
+            <div className="min-w-0">
+              <dt className="label-quiet">Change</dt>
+              <dd className="mt-1 text-[0.95rem] font-semibold">{result.lever_label ?? "One input"}</dd>
+              <dd className="mt-0.5 text-[0.72rem] text-muted">{changeDetail || result.changed_input || ""}</dd>
+            </div>
+            <div className="min-w-0">
+              <dt className="label-quiet">Alternative</dt>
+              <dd className="mt-1 text-[0.95rem] font-semibold">{result.alternative.session_demand ?? "—"}</dd>
+              <dd className="mt-0.5 truncate text-[0.72rem] text-muted">{result.alternative.primary_focus ?? "—"}</dd>
+            </div>
+          </dl>
+
+          <p className="mt-4 border-t border-subtle pt-4 text-[0.84rem] leading-relaxed">{result.conclusion}</p>
+
+          <details className="group mt-2">
+            <summary className="flex min-h-10 cursor-pointer list-none items-center gap-1 text-[0.76rem] font-medium text-muted">
+              Why →
+              <span className="transition-transform group-open:rotate-90" aria-hidden>
+                ›
+              </span>
+            </summary>
+
+            <div className="mt-2 space-y-3">
+              {result.differences.length > 0 ? (
+                <ul className="divide-y divide-subtle border-y border-subtle">
+                  {result.differences.map((row) => (
+                    <li key={row.key} className="flex items-start justify-between gap-3 py-2 text-[0.76rem]">
+                      <span className="text-muted">{row.label}</span>
+                      <span className="min-w-0 text-right">
+                        {String(row.current ?? "—")} →{" "}
+                        <span className="font-medium">{String(row.alternative ?? "—")}</span>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+
+              {result.why.length > 0 ? (
+                <ul className="space-y-1.5">
+                  {result.why.map((line) => (
+                    <li key={line} className="text-[0.76rem] leading-relaxed text-muted">
+                      {line}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+
+              {selected ? <p className="text-[0.72rem] leading-relaxed text-muted">{selected.description}</p> : null}
+              <p className="text-[0.68rem] leading-relaxed text-muted">{result.note}</p>
+              <p className="text-[0.68rem] leading-relaxed text-muted">{result.read_only_note}</p>
+            </div>
+          </details>
+        </div>
+      ) : null}
+    </div>
   );
 }
