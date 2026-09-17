@@ -6,6 +6,7 @@ import { useMemo, useState } from "react";
 
 import { ActiveSessionPanel } from "@/components/active-session";
 import { ExposureList } from "@/components/exposure-list";
+import { MuscleMap } from "@/components/muscle-map";
 import { PageHeader } from "@/components/page-header";
 import { PostSessionFeedback } from "@/components/post-session-feedback";
 import { StatePanel } from "@/components/state-panel";
@@ -28,11 +29,11 @@ interface SessionOption {
   isPrimary: boolean;
 }
 
-// Train is an execution surface, not a second dashboard.
+// Train is an execution surface, not a dashboard.
 //
-// Pre-session it shows today's session and the single action. Once a session is
-// running the page switches to a focused session mode: guidance, one optional
-// checkpoint and completion — the dashboard does not render underneath it.
+// Pre-session it reads like a launch screen: today's session, what it trains,
+// how hard and the single action — everything else folds away. Once a session
+// is running the page switches to a focused session mode.
 
 export function TrainView() {
   const { ready, today, error, logSession, startSession, busy } = useUserState();
@@ -81,10 +82,10 @@ export function TrainView() {
 
   if (!ready) {
     return (
-      <div className="space-y-4">
-        <Skeleton className="h-6 w-24" />
-        <Skeleton className="h-20 w-full" />
-        <Skeleton className="h-56 w-full" />
+      <div className="space-y-5">
+        <Skeleton className="h-4 w-20" />
+        <Skeleton className="h-8 w-48" />
+        <Skeleton className="h-[16rem] w-full rounded-[var(--radius-card)]" />
       </div>
     );
   }
@@ -92,8 +93,8 @@ export function TrainView() {
     return (
       <StatePanel
         tone="error"
-        title="Training plan unavailable"
-        body={`${error ?? "No training plan was returned."} Start the API and reload this page.`}
+        title="We couldn't load today's session"
+        body={`${error ?? "Your training data did not respond."} Reload the page to try again.`}
       />
     );
   }
@@ -101,6 +102,9 @@ export function TrainView() {
   const recommendation = today.training.recommendation;
   const isStop = today.readiness.safety_active;
   const active = today.active_session ?? null;
+  const focusGroups = recommendation.muscle_groups.length
+    ? recommendation.muscle_groups
+    : [recommendation.focus ?? recommendation.primary_name];
   const exposureBelowTarget = today.training.exposure.groups.filter(
     (group) => (group.target ?? 0) > 0 && group.value < (group.target ?? 0),
   ).length;
@@ -138,8 +142,8 @@ export function TrainView() {
 
   const logForm = (
     <div className="space-y-4">
-      {outcome ? <p className="text-[0.8rem] font-medium text-[var(--status-green)]">{outcome}</p> : null}
-      {failure ? <p className="text-[0.8rem] font-medium text-[var(--status-red)]">{failure}</p> : null}
+      {outcome ? <p className="text-[0.82rem] font-medium text-[var(--status-green)]">{outcome}</p> : null}
+      {failure ? <p className="text-[0.82rem] font-medium text-[var(--status-red)]">{failure}</p> : null}
 
       <div className="grid grid-cols-2 gap-3">
         <label className="block">
@@ -153,7 +157,7 @@ export function TrainView() {
             step={5}
             value={duration || String(defaultDuration)}
             onChange={(event) => setDuration(event.target.value)}
-            className="mt-1.5 min-h-11 w-full rounded-[var(--radius-control)] border border-subtle bg-surface px-3 text-sm"
+            className="mt-1.5 min-h-11 w-full rounded-[var(--radius-control)] border border-subtle bg-surface-muted px-3 text-sm"
           />
         </label>
         <label className="block">
@@ -165,9 +169,9 @@ export function TrainView() {
             max={10}
             value={rpe}
             onChange={(event) => setRpe(Math.min(10, Math.max(1, Number(event.target.value) || 1)))}
-            className="mt-1.5 min-h-11 w-full rounded-[var(--radius-control)] border border-subtle bg-surface px-3 text-sm"
+            className="mt-1.5 min-h-11 w-full rounded-[var(--radius-control)] border border-subtle bg-surface-muted px-3 text-sm"
           />
-          <span className="mt-1 block text-[0.66rem] text-muted">1 = very easy · 10 = maximal</span>
+          <span className="mt-1 block text-[0.68rem] text-muted">1 = very easy · 10 = maximal</span>
         </label>
       </div>
 
@@ -175,7 +179,7 @@ export function TrainView() {
         <div className="space-y-1.5">
           <p className="text-[0.78rem] font-medium">Actual completed sets</p>
           {(selected?.log_defaults?.exercises ?? []).map((exercise) => (
-            <label key={exercise.name} className="flex min-h-11 items-center justify-between gap-3 text-[0.8rem]">
+            <label key={exercise.name} className="flex min-h-11 items-center justify-between gap-3 text-[0.82rem]">
               <span className="min-w-0 truncate">{exercise.name}</span>
               <input
                 type="number"
@@ -186,7 +190,7 @@ export function TrainView() {
                 onChange={(event) =>
                   setActualSets((current) => ({ ...current, [exercise.name]: Number(event.target.value) || 0 }))
                 }
-                className="min-h-11 w-20 rounded-[var(--radius-control)] border border-subtle bg-surface px-2 text-right text-[0.8rem] md:min-h-10"
+                className="min-h-11 w-20 rounded-[var(--radius-control)] border border-subtle bg-surface-muted px-2 text-right text-[0.82rem] md:min-h-10"
               />
             </label>
           ))}
@@ -215,7 +219,7 @@ export function TrainView() {
           type="text"
           value={notes}
           onChange={(event) => setNotes(event.target.value)}
-          className="mt-1.5 min-h-11 w-full rounded-[var(--radius-control)] border border-subtle bg-surface px-3 text-sm"
+          className="mt-1.5 min-h-11 w-full rounded-[var(--radius-control)] border border-subtle bg-surface-muted px-3 text-sm"
         />
       </label>
 
@@ -226,16 +230,12 @@ export function TrainView() {
   );
 
   // --------------------------------------------------------------------- //
-  // Focused session mode: the running session replaces the dashboard.
+  // Focused session mode: the running session replaces the launch screen.
   // --------------------------------------------------------------------- //
   if (active) {
     return (
       <div className="space-y-6">
-        <PageHeader
-          eyebrow="Train"
-          title={recommendation.primary_name}
-          description={`${recommendation.session_demand} · ${recommendation.duration} · ${recommendation.rir_guidance ?? "effort guidance unavailable"}`}
-        />
+        <PageHeader back={{ href: "/", label: "Today" }} eyebrow="Session in progress" title={recommendation.primary_name} />
 
         {isStop ? (
           <StatePanel
@@ -247,16 +247,16 @@ export function TrainView() {
 
         <ActiveSessionPanel active={active} sessionTrace={today.session_trace ?? []} />
 
-        <details className="surface group px-4 py-3">
-          <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 text-[0.88rem] font-semibold">
+        <details className="surface group px-5 py-4">
+          <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 text-[0.9rem] font-semibold">
             Complete session
-            <span className="text-[0.72rem] font-normal text-muted">RPE, sets, notes</span>
+            <span className="text-[0.74rem] font-normal text-muted">RPE · sets · notes</span>
           </summary>
           <div className="pt-4">{logForm}</div>
         </details>
 
         {loggedSessionId ? (
-          <Section eyebrow="Personal response" title="Session feedback" divided={false}>
+          <Section eyebrow="Personal response" title="Session feedback">
             <PostSessionFeedback
               sessionId={loggedSessionId}
               focus={recommendation.primary_name}
@@ -269,15 +269,11 @@ export function TrainView() {
   }
 
   // --------------------------------------------------------------------- //
-  // Pre-session: today's session, one action, and quiet links out.
+  // Pre-session launch screen.
   // --------------------------------------------------------------------- //
   return (
-    <div className="space-y-5">
-      <PageHeader
-        eyebrow="Train"
-        title={recommendation.primary_name}
-        description={`${recommendation.session_demand} · ${recommendation.duration} · ${recommendation.rir_guidance ?? "effort guidance unavailable"}`}
-      />
+    <div className="space-y-6">
+      <PageHeader back={{ href: "/", label: "Today" }} eyebrow="Train" title="Today's session" />
 
       {isStop ? (
         <StatePanel
@@ -288,41 +284,40 @@ export function TrainView() {
       ) : null}
 
       <section className="surface-raised px-5 py-5">
-        <p className="label-quiet">Today&apos;s session</p>
-        <h2 className="title-decision mt-1.5">{selected?.name ?? recommendation.primary_name}</h2>
-        <p className="mt-1.5 text-[0.84rem] text-muted">
-          {[selected?.intensity, selected?.duration, recommendation.rir_guidance]
+        <h2 className="title-hero">{selected?.name ?? recommendation.primary_name}</h2>
+        <p className="mt-2 text-[0.9rem] text-secondary">
+          {[selected?.intensity ?? recommendation.session_demand, selected?.duration ?? recommendation.duration, recommendation.rir_guidance]
             .filter(Boolean)
             .join(" · ")}
         </p>
 
+        <MuscleMap groups={focusGroups} className="mt-4" />
+
         <Button
           size="lg"
           variant="primary"
-          className="mt-4 w-full"
+          className="mt-5 w-full"
           disabled={busy || isStop}
           onClick={() => void startSession(selected?.prescription_id ?? null)}
         >
           {busy ? "Starting…" : "Start Session"}
         </Button>
 
-        <details className="group mt-3">
-          <summary className="flex min-h-10 cursor-pointer list-none items-center justify-between gap-3 text-[0.78rem] font-medium">
-            Prescribed work
-            <span className="text-muted">
-              {(selected?.template?.items ?? []).length} items
-            </span>
+        <details className="group mt-4">
+          <summary className="flex min-h-10 cursor-pointer list-none items-center justify-between gap-3 text-[0.8rem] font-medium">
+            Session details
+            <span className="text-muted">{(selected?.template?.items ?? []).length} items</span>
           </summary>
           <div className="pt-2">
-            <ul className="divide-y divide-subtle border-y border-subtle">
+            <ul className="hairline-list space-y-0">
               {(selected?.template?.items ?? []).map((item) => (
-                <li key={item} className="py-2.5 text-[0.86rem]">
+                <li key={item} className="hairline py-2.5 text-[0.86rem]">
                   {item}
                 </li>
               ))}
             </ul>
             {selected?.template?.note ? (
-              <p className="mt-2 text-[0.7rem] text-muted">{selected.template.note}</p>
+              <p className="mt-2 text-[0.72rem] leading-relaxed text-muted">{selected.template.note}</p>
             ) : null}
           </div>
         </details>
@@ -347,39 +342,42 @@ export function TrainView() {
         </div>
       ) : null}
 
-      <p className="divider pt-4 text-[0.74rem] text-muted">
+      <p className="text-[0.8rem] text-muted">
         {exposureBelowTarget === 0
           ? "Every muscle group is at or above its weekly target."
           : `${exposureBelowTarget} muscle group${exposureBelowTarget === 1 ? "" : "s"} below this week's target.`}
       </p>
 
-      <details className="group">
-        <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 text-[0.86rem] font-medium">
+      <details className="divider group pt-5">
+        <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 text-[0.88rem] font-medium">
           Weekly exposure
-          <span className="text-[0.72rem] text-muted">7 muscle groups</span>
+          <span className="text-[0.74rem] text-muted">{today.training.exposure.groups.length} muscle groups</span>
         </summary>
-        <div className="pt-3">
+        <div className="pt-4">
           <ExposureList exposure={today.training.exposure} />
         </div>
       </details>
 
-      <details className="divider group pt-4">
-        <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 text-[0.86rem] font-medium">
+      <details className="divider group pt-5">
+        <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 text-[0.88rem] font-medium">
           Recent sessions
-          <span className="text-[0.72rem] text-muted">{today.training.history.length} completed</span>
+          <span className="text-[0.74rem] text-muted">{today.training.history.length} completed</span>
         </summary>
-        <div className="pt-2">
+        <div className="pt-3">
           {today.training.history.length > 0 ? (
-            <ul className="divide-y divide-subtle border-y border-subtle">
+            <ul>
               {today.training.history.map((session) => (
-                <li key={`${session.date}-${session.focus}`} className="flex min-h-12 items-center justify-between gap-3">
+                <li
+                  key={`${session.date}-${session.focus}`}
+                  className="hairline flex min-h-12 items-center justify-between gap-3 last:border-b-0"
+                >
                   <span className="min-w-0">
                     <span className="block truncate text-[0.86rem] font-medium">
                       {session.focus ?? session.training_type ?? "Session"}
                     </span>
-                    <span className="text-[0.7rem] text-muted">{formatShortDate(session.date)}</span>
+                    <span className="text-[0.72rem] text-muted">{formatShortDate(session.date)}</span>
                   </span>
-                  <span className="shrink-0 text-right text-[0.74rem] text-muted">
+                  <span className="shrink-0 text-right text-[0.76rem] text-muted">
                     {session.session_rpe !== null ? `RPE ${formatNumber(session.session_rpe)}` : "—"}
                     {session.duration_min !== null ? ` · ${formatNumber(session.duration_min)} min` : ""}
                     {session.working_sets !== null ? ` · ${formatNumber(session.working_sets)} sets` : ""}
@@ -397,16 +395,16 @@ export function TrainView() {
         </div>
       </details>
 
-      <details className="divider group pt-4">
-        <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 text-[0.86rem] font-medium">
+      <details className="divider group pt-5">
+        <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 text-[0.88rem] font-medium">
           Log completed workout
-          <span className="text-[0.72rem] text-muted">RPE, sets, notes</span>
+          <span className="text-[0.74rem] text-muted">RPE · sets · notes</span>
         </summary>
         <div className="pt-4">{logForm}</div>
       </details>
 
       {loggedSessionId ? (
-        <Section eyebrow="Personal response" title="Session feedback" divided={false}>
+        <Section eyebrow="Personal response" title="Session feedback">
           <PostSessionFeedback
             sessionId={loggedSessionId}
             focus={recommendation.primary_name}
@@ -415,29 +413,26 @@ export function TrainView() {
         </Section>
       ) : null}
 
-      <nav aria-label="Secondary" className="divider flex flex-wrap gap-x-5 gap-y-1 pt-4">
+      <nav aria-label="Secondary" className="divider flex flex-wrap gap-x-6 gap-y-1 pt-5">
         <Link
           href="/decision-trace"
-          className="flex min-h-11 items-center text-[0.82rem] font-medium transition-colors hover:text-muted md:min-h-8"
+          className="flex min-h-11 items-center text-[0.82rem] font-medium text-muted transition-colors hover:text-foreground md:min-h-8"
         >
           Why this recommendation →
         </Link>
         <Link
-          href="/insights"
-          className="flex min-h-11 items-center text-[0.82rem] font-medium transition-colors hover:text-muted md:min-h-8"
+          href="/personal-response"
+          className="flex min-h-11 items-center text-[0.82rem] font-medium text-muted transition-colors hover:text-foreground md:min-h-8"
         >
           Personal response →
         </Link>
-        <Link href="/check-in" className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "hidden md:inline-flex")}>
-          Morning check-in
-        </Link>
       </nav>
 
-      <p className="flex items-start gap-2 text-[0.7rem] leading-relaxed text-muted">
+      <p className="flex items-start gap-2 text-[0.72rem] leading-relaxed text-muted">
         <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
         Today&apos;s inputs come from the morning check-in.
       </p>
-      <Link href="/check-in" className={cn(buttonVariants({ variant: "secondary" }), "w-full md:hidden")}>
+      <Link href="/check-in" className={cn(buttonVariants({ variant: "secondary" }), "w-full")}>
         Go to morning check-in
       </Link>
     </div>
