@@ -7,6 +7,7 @@ import { useMemo, useState } from "react";
 import { DecisionTrace } from "@/components/decision-trace";
 import { ExposureList } from "@/components/exposure-list";
 import { PageHeader } from "@/components/page-header";
+import { ActiveSessionPanel } from "@/components/active-session";
 import { PersonalResponseSummary, ResponseEpisodeList } from "@/components/personal-response";
 import { PostSessionFeedback } from "@/components/post-session-feedback";
 import { StatePanel } from "@/components/state-panel";
@@ -31,7 +32,7 @@ interface SessionOption {
 }
 
 export function TrainView() {
-  const { ready, today, error, logSession, busy } = useUserState();
+  const { ready, today, error, logSession, startSession, busy } = useUserState();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [duration, setDuration] = useState<string>("");
   const [rpe, setRpe] = useState<number>(6);
@@ -144,6 +145,28 @@ export function TrainView() {
         />
       ) : null}
 
+      {/* Start → active → calibrate → complete → feedback. The active panel sits
+          directly under the header so the flow reads in order on a phone. */}
+      {today.active_session ? (
+        <ActiveSessionPanel active={today.active_session} sessionTrace={today.session_trace ?? []} />
+      ) : (
+        <Section eyebrow="Session" title="Start session" divided={false}>
+          <p className="text-[0.8rem] leading-relaxed text-muted">
+            Starting a session keeps today&apos;s guidance on screen and lets you take one optional checkpoint while you
+            train. You can still log the session without starting it, and nothing is logged until you complete it.
+          </p>
+          <Button
+            size="lg"
+            variant="primary"
+            className="mt-3 w-full"
+            disabled={busy || isStop}
+            onClick={() => void startSession(selected?.prescription_id ?? null)}
+          >
+            {busy ? "Starting…" : "Start session"}
+          </Button>
+        </Section>
+      )}
+
       {options.length > 1 ? (
         <Segmented
           options={options.map((option) => ({
@@ -235,11 +258,14 @@ export function TrainView() {
         ) : null}
       </Section>
 
-      <Section eyebrow="After training" title="Log completed workout">
+      <Section eyebrow="After training" title={today.active_session ? "Complete session" : "Log completed workout"}>
         <Card className="space-y-4 p-4">
           <p className="text-[0.72rem] leading-relaxed text-muted">
             Seven-day exposure uses the sets you actually completed. Logging here updates exposure, training load and the
             next recommendation immediately.
+            {today.active_session?.calibration
+              ? " Your in-session checkpoint travels with this session into the response episode."
+              : ""}
           </p>
           {outcome ? <p className="text-[0.8rem] font-medium text-[var(--status-green)]">{outcome}</p> : null}
           {failure ? <p className="text-[0.8rem] font-medium text-[var(--status-red)]">{failure}</p> : null}

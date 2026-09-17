@@ -1,8 +1,11 @@
 import type {
+  ActiveSessionResponse,
   BaseStateResponse,
+  CalibrationResponse,
   CoachMessageResponse,
   CoachTurn,
   DecisionTraceStep,
+  ExplorerLeversResponse,
   HealthResponse,
   InsightsResponse,
   ProfileEdits,
@@ -20,6 +23,7 @@ import type {
   TrainingRecommendation,
   UserState,
   WeeklyExposure,
+  WhatIfResponse,
 } from "@/types/api";
 
 /**
@@ -97,6 +101,28 @@ export const api = {
     request<PersonalResponse>("/api/state/personal-response", { method: "POST", body: JSON.stringify({ state }) }),
   personalResponse: (responseDemo?: string) =>
     request<PersonalResponse>(`/api/personal-response${responseDemo ? `?response_demo=${encodeURIComponent(responseDemo)}` : ""}`),
+  // V1.3 final sprint — active session, calibration and the decision explorer
+  stateSessionStart: (state: UserState, prescriptionId: string | null) =>
+    request<ActiveSessionResponse>("/api/state/session/start", {
+      method: "POST",
+      body: JSON.stringify({ state, prescription_id: prescriptionId }),
+    }),
+  stateSessionCancel: (state: UserState) =>
+    request<StateEnvelope>("/api/state/session/cancel", { method: "POST", body: JSON.stringify({ state }) }),
+  stateCalibration: (
+    state: UserState,
+    observation: { effort: string; performance: string; actual_rir: number | null; note?: string },
+  ) =>
+    request<CalibrationResponse>("/api/state/session/calibration", {
+      method: "POST",
+      body: JSON.stringify({ state, observation }),
+    }),
+  explorerLevers: () => request<ExplorerLeversResponse>("/api/decision-explorer"),
+  stateWhatIf: (state: UserState, lever: string, options?: { group?: string | null; level?: number | null }) =>
+    request<WhatIfResponse>("/api/state/what-if", {
+      method: "POST",
+      body: JSON.stringify({ state, lever, group: options?.group ?? null, level: options?.level ?? null }),
+    }),
 };
 
 function _stateBaseQuery(profileId?: string, scenario?: string, responseDemo?: string): string {

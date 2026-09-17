@@ -9,6 +9,8 @@
  * |   | `response_context` / `response_feedback` keys (default `null`) |
  * | 3 | and every profile carrying the V1.3 Phase 2 `adaptation_log` |
  * |   | (default `[]`). A purely additive field, so no version bump or reset. |
+ * | 3 | and the V1.3 final-sprint `active_session` (default `null`) plus the |
+ * |   | per-session `response_calibration` key (default `null`). Additive again. |
  *
  * Rules: never discard user data, never silently reset. An envelope from a *newer*
  * version than this build understands is refused (returns null) so a downgrade
@@ -51,6 +53,7 @@ function normaliseState(raw: unknown): UserState | null {
   const adaptationLog = Array.isArray(state.adaptation_log)
     ? (state.adaptation_log as UserState["adaptation_log"])
     : [];
+  const activeSession = asRecord(state.active_session);
   return {
     profile_id: state.profile_id,
     scenario: (state.scenario as string | null) ?? null,
@@ -58,6 +61,9 @@ function normaliseState(raw: unknown): UserState | null {
     check_in: (state.check_in as UserState["check_in"]) ?? null,
     daily_history: Array.isArray(state.daily_history) ? (state.daily_history as UserState["daily_history"]) : [],
     adaptation_log: adaptationLog,
+    // V1.3 final sprint: an unfinished session survives a reload, and older
+    // envelopes simply have none.
+    active_session: (activeSession as UserState["active_session"]) ?? null,
     training_history: sessions.map((row) => {
       const session = asRecord(row) ?? {};
       // V1.3 keys are added explicitly so the response layer can rely on them.
@@ -65,6 +71,7 @@ function normaliseState(raw: unknown): UserState | null {
         ...session,
         response_context: asRecord(session.response_context) ?? null,
         response_feedback: asRecord(session.response_feedback) ?? null,
+        response_calibration: asRecord(session.response_calibration) ?? null,
       } as UserState["training_history"][number];
     }),
   };

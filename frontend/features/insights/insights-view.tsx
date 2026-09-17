@@ -19,8 +19,10 @@ import { Section } from "@/components/ui/section";
 import { Segmented } from "@/components/ui/segmented";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatNumber, formatShortDate } from "@/lib/format";
+import { calibrationLabel, calibrationTone } from "@/lib/calibration";
 import { asNumber, asString } from "@/lib/measurements";
 import { useUserState } from "@/lib/state-provider";
+import { cn } from "@/lib/utils";
 import type { InsightsResponse } from "@/types/api";
 import type { PersonalResponse } from "@/types/api";
 
@@ -31,7 +33,7 @@ const WINDOWS = [
 ];
 
 export function InsightsView() {
-  const { ready, loadInsights, loadPersonalResponse } = useUserState();
+  const { ready, today, loadInsights, loadPersonalResponse } = useUserState();
   const [window, setWindow] = useState(28);
   const [data, setData] = useState<InsightsResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -211,6 +213,48 @@ export function InsightsView() {
               <p className="eyebrow">Adaptation history</p>
               <div className="mt-2">
                 <AdaptationHistoryList history={response.adaptation_history} />
+              </div>
+            </div>
+
+            {/* In-session calibration: only meaningful once checkpoints exist, so
+                it stays a single compact block rather than a new dashboard. */}
+            <div>
+              <p className="eyebrow">In-session calibration</p>
+              <div className="mt-2">
+                {(today?.calibration?.summary.total ?? 0) > 0 ? (
+                  <div className="space-y-2">
+                    <p className="text-[0.78rem]">{today?.calibration?.summary.trend}</p>
+                    <ul className="divide-y divide-subtle border-y border-subtle">
+                      {(today?.calibration?.history ?? []).slice(-5).reverse().map((row) => (
+                        <li key={`${row.recorded_at}-${row.session_id ?? ""}`} className="flex items-start justify-between gap-3 py-2.5">
+                          <span className="min-w-0">
+                            <span className="block text-[0.78rem] font-medium">{formatShortDate(row.date)}</span>
+                            <span className="block text-[0.7rem] text-muted">
+                              {row.focus ?? "Session"} · {row.effort ?? "—"}
+                              {row.actual_rir !== null && row.actual_rir !== undefined ? ` · ${row.actual_rir} RIR` : ""}
+                            </span>
+                          </span>
+                          <span
+                            className={cn(
+                              "shrink-0 rounded-full px-2 py-0.5 text-[0.62rem] font-semibold",
+                              calibrationTone(row.result),
+                            )}
+                          >
+                            {calibrationLabel(row.result)}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                    <p className="text-[0.68rem] leading-relaxed text-muted">
+                      {today?.calibration?.summary.note}
+                    </p>
+                  </div>
+                ) : (
+                  <p className="text-[0.8rem] text-muted">
+                    No in-session checkpoints yet. Starting a session on Train adds one optional checkpoint that
+                    compares the session with the guidance you began with.
+                  </p>
+                )}
               </div>
             </div>
           </div>

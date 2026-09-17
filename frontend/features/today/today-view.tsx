@@ -5,6 +5,7 @@ import { ArrowRight, ShieldCheck } from "lucide-react";
 
 import { CheckInPrompt } from "@/components/check-in-prompt";
 import { DecisionTrace } from "@/components/decision-trace";
+import { DecisionExplorer } from "@/components/decision-explorer";
 import { ReadinessHero } from "@/components/readiness-hero";
 import { StatePanel } from "@/components/state-panel";
 import { TrainingDecision } from "@/components/training-decision";
@@ -98,6 +99,9 @@ export function TodayView() {
             rationale={why.rationale}
             headline={why.headline}
           />
+          {/* Secondary surface: the explorer stays collapsed inside the "why"
+              area and never becomes a primary destination. */}
+          <DecisionExplorer className="divider group pt-4" />
         </div>
       </div>
 

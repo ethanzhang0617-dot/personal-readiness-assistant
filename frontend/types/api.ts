@@ -174,8 +174,149 @@ export interface TodayResponse {
   };
   why: TodayWhy;
   personal_response?: PersonalResponse;
+  /** V1.3 final sprint — the session the user started but has not completed. */
+  active_session?: ActiveSession | null;
+  session_trace?: DecisionTraceStep[];
+  calibration?: CalibrationBlock;
   generated_at: string;
   source: string;
+}
+
+/* ------------------------------------------------------------------ */
+/* V1.3 final sprint — in-session calibration and the decision explorer */
+/* ------------------------------------------------------------------ */
+
+export type CalibrationResult = "HOLD" | "EASE" | "OPTIONAL PUSH";
+
+/** One in-session checkpoint, resolved by the deterministic rule. */
+export interface Calibration {
+  result: CalibrationResult;
+  reason: string;
+  guidance: string;
+  planned_rir: string | null;
+  planned_range: number[] | null;
+  effort: string;
+  actual_rir: number | null;
+  performance: string;
+  blocks: string[];
+  conservative_signals: string[];
+  scope: string;
+  note: string;
+}
+
+/** The stored calibration record (kept minimal on purpose). */
+export interface CalibrationEvent {
+  date: string;
+  recorded_at: string;
+  session_id: string | null;
+  focus: string | null;
+  session_demand: string | null;
+  starting_guidance: string | null;
+  effort: string | null;
+  actual_rir: number | null;
+  performance: string | null;
+  result: CalibrationResult | string | null;
+  reason: string | null;
+  guidance: string | null;
+}
+
+export interface CalibrationSummary {
+  total: number;
+  counts: Record<string, number>;
+  eased: number;
+  trend: string;
+  latest: CalibrationEvent | null;
+  reported_rir_values: number[];
+  note: string;
+}
+
+export interface CalibrationBlock {
+  history: CalibrationEvent[];
+  summary: CalibrationSummary;
+}
+
+/** The active session's starting plan, kept so a checkpoint can be compared with it. */
+export interface ActiveSession {
+  started_at: string;
+  prescription_id: string | null;
+  primary_focus: string | null;
+  session_demand: string | null;
+  base_session_demand: string | null;
+  adjustment: number;
+  planned_rir: string | null;
+  duration: string | null;
+  muscle_groups?: string[];
+  calibration?: CalibrationEvent | null;
+}
+
+export interface ActiveSessionResponse {
+  state: UserState;
+  active_session: ActiveSession | null;
+  session_trace: DecisionTraceStep[];
+  today: TodayResponse;
+}
+
+export interface CalibrationResponse {
+  state: UserState;
+  calibration: Calibration;
+  session_trace: DecisionTraceStep[];
+  history: CalibrationEvent[];
+  summary: CalibrationSummary;
+}
+
+/* ------------------------------------------------------------------ */
+/* What-if / Decision Explorer                                          */
+/* ------------------------------------------------------------------ */
+
+export interface ExplorerLever {
+  key: "soreness" | "recovery" | "personal_response";
+  label: string;
+  description: string;
+  change_summary: string;
+  needs_group: boolean;
+}
+
+export interface ExplorerLeversResponse {
+  levers: ExplorerLever[];
+  compared_fields: Array<{ key: string; label: string }>;
+  note: string;
+  read_only: boolean;
+}
+
+export interface WhatIfDifference {
+  key: string;
+  label: string;
+  current: string | number | null;
+  alternative: string | number | null;
+}
+
+export interface WhatIfSnapshot {
+  readiness_status: string | null;
+  readiness_index: number | null;
+  session_demand: string | null;
+  base_session_demand: string | null;
+  primary_focus: string | null;
+  rir_guidance: string | null;
+  personal_response_adjustment: string;
+  personal_response_confidence: string | null;
+  adjustment: number;
+}
+
+export interface WhatIfResponse {
+  lever: string | null;
+  lever_label: string | null;
+  changed_input: string | null;
+  change: Record<string, unknown>;
+  current: WhatIfSnapshot;
+  alternative: WhatIfSnapshot;
+  differences: WhatIfDifference[];
+  changed: boolean;
+  conclusion: string;
+  why: string[];
+  current_view: { readiness_why: string[]; rationale: string[] };
+  alternative_view: { readiness_why: string[]; rationale: string[] };
+  note: string;
+  read_only_note: string;
 }
 
 export interface HealthResponse {
@@ -316,6 +457,8 @@ export interface SessionRow {
   /** V1.3 response episode data attached to a session. */
   response_context?: ResponseSnapshot | null;
   response_feedback?: ResponseFeedback | null;
+  /** V1.3 final sprint: the in-session checkpoint recorded during the session. */
+  response_calibration?: CalibrationEvent | null;
 }
 
 export interface ResponseSnapshot {
@@ -455,6 +598,8 @@ export interface ResponseEpisode {
   date: string;
   focus: string | null;
   band: string | null;
+  /** V1.3 final sprint: the in-session checkpoint, when one was recorded. */
+  calibrated?: CalibrationEvent | null;
   before: {
     readiness_status: string | null;
     readiness_index: number | null;
@@ -548,6 +693,8 @@ export interface UserState {
   training_history: SessionRow[];
   /** V1.3 Phase 2: one meaningful adaptation decision per day (oldest first). */
   adaptation_log: AdaptationEvent[];
+  /** V1.3 final sprint: the session started but not yet completed. */
+  active_session: ActiveSession | null;
 }
 
 export interface ScenarioInfo {

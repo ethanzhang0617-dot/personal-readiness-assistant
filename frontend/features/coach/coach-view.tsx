@@ -29,6 +29,14 @@ const RESPONSE_STARTERS = [
   "Why didn't you increase today's training if I usually recover well?",
 ];
 
+// In-session calibration starters. These resolve deterministically too, and they
+// only answer from recorded checkpoints — never from the explanation provider.
+const CALIBRATION_STARTERS = [
+  "What is my calibration today?",
+  "Have I often needed to ease off recently?",
+  "What RIR did I just record?",
+];
+
 // Provenance is communicated quietly: a small label above the answer, never a
 // developer badge. Verified answers are the deterministic layer; everything else
 // came from the explanation provider or its rule-based fallback.
@@ -111,6 +119,24 @@ export function CoachView() {
             <p className="text-[0.7rem] font-medium text-muted">Personal response</p>
             <ul className="divide-y divide-subtle border-y border-subtle">
               {RESPONSE_STARTERS.map((starter) => (
+                <li key={starter}>
+                  <button
+                    type="button"
+                    disabled={!ready || busy}
+                    onClick={() => void send(starter)}
+                    className="flex min-h-12 w-full items-center justify-between gap-3 text-left text-sm transition-colors hover:text-foreground disabled:opacity-50"
+                  >
+                    {starter}
+                    <span aria-hidden className="text-muted">
+                      →
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <p className="text-[0.7rem] font-medium text-muted">In-session calibration</p>
+            <ul className="divide-y divide-subtle border-y border-subtle">
+              {CALIBRATION_STARTERS.map((starter) => (
                 <li key={starter}>
                   <button
                     type="button"

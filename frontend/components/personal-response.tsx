@@ -1,6 +1,7 @@
 import { ChevronRight } from "lucide-react";
 
 import { formatNumber, formatShortDate } from "@/lib/format";
+import { calibrationLabel, calibrationTone } from "@/lib/calibration";
 import { ADAPTATION_RESULT_LABELS, EVIDENCE_LABELS } from "@/lib/response";
 import type {
   AdaptationEvent,
@@ -219,6 +220,7 @@ export function PersonalResponseSummary({ response }: { response: PersonalRespon
 function EpisodeRow({ episode }: { episode: ResponseEpisode }) {
   const after = episode.after;
   const feedback = episode.feedback;
+  const calibrated = episode.calibrated ?? null;
   const verdict = episode.response?.verdict ?? "unavailable";
   const verdictLabel =
     verdict === "poorer_than_usual" ? "Poorer than usual"
@@ -236,6 +238,7 @@ function EpisodeRow({ episode }: { episode: ResponseEpisode }) {
           <span className="block text-[0.7rem] text-muted">
             {formatShortDate(episode.date)} ·{" "}
             {feedback ? "feedback recorded" : "no feedback"} ·{" "}
+            {calibrated ? "checkpoint recorded · " : ""}
             {episode.link === "linked" ? "next-day check-in linked" : episode.link === "pending" ? "next-day check-in pending" : "no linked check-in"}
           </span>
         </span>
@@ -264,6 +267,29 @@ function EpisodeRow({ episode }: { episode: ResponseEpisode }) {
             {episode.recommendation.rir ? ` · ${episode.recommendation.rir}` : ""}
           </p>
         </div>
+        {/* V1.3 final sprint: the in-session checkpoint, when one was recorded.
+            Episodes logged without a checkpoint simply omit this step. */}
+        {calibrated ? (
+          <div>
+            <p className="eyebrow">Calibrated</p>
+            <p className="mt-1">
+              <span
+                className={cn(
+                  "mr-2 rounded-full px-2 py-0.5 text-[0.62rem] font-semibold",
+                  calibrationTone(String(calibrated.result)),
+                )}
+              >
+                {calibrationLabel(calibrated.result)}
+              </span>
+              {calibrated.effort ?? "—"}
+              {calibrated.actual_rir !== null && calibrated.actual_rir !== undefined
+                ? ` · ${calibrated.actual_rir} RIR`
+                : ""}
+              {calibrated.performance ? ` · ${calibrated.performance}` : ""}
+            </p>
+            {calibrated.guidance ? <p className="mt-0.5 text-muted">{calibrated.guidance}</p> : null}
+          </div>
+        ) : null}
         <div>
           <p className="eyebrow">Performed</p>
           <p className="mt-1">

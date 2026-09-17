@@ -5,6 +5,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { api } from "@/lib/api";
 import { clearEnvelope, readEnvelope, writeEnvelope } from "@/lib/store";
 import type {
+  Calibration,
   CoachKind,
   CoachTurn,
   InsightsResponse,
@@ -13,6 +14,7 @@ import type {
   ProfileSummary,
   TodayResponse,
   UserState,
+  WhatIfResponse,
 } from "@/types/api";
 
 export const DEFAULT_PROFILE_ID = "demo-ethan";
@@ -57,6 +59,15 @@ interface UserStateContextValue {
   ) => Promise<ActionResult>;
   loadPersonalResponse: () => Promise<{ ok: boolean; data?: PersonalResponse; error?: string }>;
   seedResponseDemo: (caseName: string) => Promise<ActionResult>;
+  startSession: (prescriptionId: string | null) => Promise<ActionResult>;
+  cancelSession: () => Promise<ActionResult>;
+  submitCalibration: (
+    observation: { effort: string; performance: string; actual_rir: number | null },
+  ) => Promise<{ ok: boolean; calibration?: Calibration; error?: string }>;
+  runWhatIf: (
+    lever: string,
+    options?: { group?: string | null; level?: number | null },
+  ) => Promise<{ ok: boolean; data?: WhatIfResponse; error?: string }>;
   askCoach: (question: string) => Promise<ActionResult>;
   clearChat: () => Promise<void>;
   loadInsights: (window?: number) => Promise<{ ok: boolean; data?: InsightsResponse; error?: string }>;
@@ -315,6 +326,76 @@ export function UserStateProvider({ children }: { children: ReactNode }) {
     [activeId, chats, persist, refreshToday, state?.scenario, states],
   );
 
+  /** V1.3: open the active session with the guidance the product prescribes now. */
+  const startSession = useCallback(
+    async (prescriptionId: string | null) => {
+      if (!state) return { ok: false, error: "The local profile is still loading." };
+      setBusy(true);
+      try {
+        const result = await api.stateSessionStart(state, prescriptionId);
+        if (!result.ok) return { ok: false, error: result.error };
+        const nextStates = { ...states, [activeId]: result.data.state };
+        setStates(nextStates);
+        setToday(result.data.today);
+        await persist(nextStates, chats, activeId);
+        return { ok: true, message: "Session started. Guidance is on screen until you complete it." };
+      } finally {
+        setBusy(false);
+      }
+    },
+    [activeId, chats, persist, state, states],
+  );
+
+  const cancelSession = useCallback(async () => {
+    if (!state) return { ok: false, error: "The local profile is still loading." };
+    setBusy(true);
+    try {
+      const result = await api.stateSessionCancel(state);
+      if (!result.ok) return { ok: false, error: result.error };
+      const nextStates = { ...states, [activeId]: result.data.state };
+      setStates(nextStates);
+      setToday(result.data.today);
+      await persist(nextStates, chats, activeId);
+      return { ok: true, message: "Active session discarded. Nothing was logged." };
+    } finally {
+      setBusy(false);
+    }
+  }, [activeId, chats, persist, state, states]);
+
+  /**
+   * One optional in-session checkpoint. It only ever resolves to HOLD, EASE or
+   * OPTIONAL PUSH, and it is stored on the active session so a reload keeps it.
+   */
+  const submitCalibration = useCallback(
+    async (observation: { effort: string; performance: string; actual_rir: number | null }) => {
+      if (!state) return { ok: false as const, error: "The local profile is still loading." };
+      setBusy(true);
+      try {
+        const result = await api.stateCalibration(state, observation);
+        if (!result.ok) return { ok: false as const, error: result.error };
+        const nextStates = { ...states, [activeId]: result.data.state };
+        setStates(nextStates);
+        await persist(nextStates, chats, activeId);
+        await refreshToday(forToday(result.data.state), nextStates, chats);
+        return { ok: true as const, calibration: result.data.calibration };
+      } finally {
+        setBusy(false);
+      }
+    },
+    [activeId, chats, persist, refreshToday, state, states],
+  );
+
+  /** What-if is a read-only simulation: the returned state is deliberately ignored. */
+  const runWhatIf = useCallback(
+    async (lever: string, options?: { group?: string | null; level?: number | null }) => {
+      if (!effective) return { ok: false as const, error: "The local profile is still loading." };
+      const result = await api.stateWhatIf(effective, lever, options);
+      if (!result.ok) return { ok: false as const, error: result.error };
+      return { ok: true as const, data: result.data };
+    },
+    [effective],
+  );
+
   const askCoach = useCallback(
     async (question: string) => {
       if (!effective) return { ok: false, error: "The local profile is still loading." };
@@ -476,6 +557,10 @@ export function UserStateProvider({ children }: { children: ReactNode }) {
     submitFeedback,
     loadPersonalResponse,
     seedResponseDemo,
+    startSession,
+    cancelSession,
+    submitCalibration,
+    runWhatIf,
     askCoach,
     clearChat,
     loadInsights,

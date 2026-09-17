@@ -123,6 +123,47 @@ check("v2 → v3 keeps a recorded adaptation history", () => {
   assert.equal(log[0].reason.includes("poorer next-day response"), true);
 });
 
+check("v2 → v3 normalises the session calibration key and the active session", () => {
+  const result = migrateEnvelope(v2);
+  for (const item of Object.values(result.envelope.states)) {
+    assert.equal(item.active_session, null);
+    for (const session of item.training_history) {
+      assert.equal(session.response_calibration, null);
+    }
+  }
+});
+
+check("an unfinished session and its checkpoint survive a reload", () => {
+  const withCalibration = {
+    ...v2,
+    version: 3,
+    states: {
+      "demo-ethan": {
+        ...state("demo-ethan", [{
+          session_id: "e3", date: "2026-09-17",
+          response_calibration: { result: "EASE", actual_rir: 0, effort: "Harder than expected" },
+        }]),
+        active_session: {
+          started_at: "2026-09-17T07:00:00+00:00",
+          primary_focus: "Back + Biceps",
+          planned_rir: "1–3 RIR",
+          calibration: { result: "EASE", actual_rir: 0 },
+        },
+      },
+    },
+  };
+  const migrated = migrateEnvelope(withCalibration).envelope.states["demo-ethan"];
+  assert.equal(migrated.active_session.primary_focus, "Back + Biceps");
+  assert.equal(migrated.active_session.calibration.result, "EASE");
+  assert.equal(migrated.training_history[0].response_calibration.result, "EASE");
+});
+
+check("a legacy episode without a calibration stays valid", () => {
+  const legacy = migrateEnvelope(v2).envelope.states["demo-ethan"].training_history[0];
+  assert.equal(legacy.response_calibration, null);
+  assert.equal(legacy.session_id, "e1");
+});
+
 check("a current envelope missing the adaptation history gains one, not a reset", () => {
   const current = migrateEnvelope(v2).envelope;
   delete current.states["demo-ethan"].adaptation_log;
