@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 
+import { ThemeProvider } from "@/components/theme-provider";
 import { UserStateProvider } from "@/lib/state-provider";
 
 /**
@@ -9,5 +10,9 @@ import { UserStateProvider } from "@/lib/state-provider";
  * IndexedDB, never on the API server.
  */
 export function Providers({ children }: { children: ReactNode }) {
-  return <UserStateProvider>{children}</UserStateProvider>;
+  return (
+    <ThemeProvider>
+      <UserStateProvider>{children}</UserStateProvider>
+    </ThemeProvider>
+  );
 }

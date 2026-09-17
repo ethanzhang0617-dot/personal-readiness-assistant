@@ -35,6 +35,40 @@ export function statusLabel(status: ReadinessStatus | string): string {
   }
 }
 
+/**
+ * Raw status colour for SVG fills, strokes and charts. Same semantics in both
+ * themes: only the surrounding surfaces change.
+ */
+export function statusVar(status: ReadinessStatus | string): string {
+  switch (status) {
+    case "GREEN":
+      return "var(--status-green)";
+    case "AMBER":
+      return "var(--status-amber)";
+    case "RED":
+    case "STOP / PROFESSIONAL REVIEW":
+      return "var(--status-red)";
+    default:
+      return "var(--text-muted)";
+  }
+}
+
+/** Plain-language state word shown next to the score. */
+export function statusHeadline(status: ReadinessStatus | string): string {
+  switch (status) {
+    case "GREEN":
+      return "Ready";
+    case "AMBER":
+      return "Caution";
+    case "RED":
+      return "Recover";
+    case "STOP / PROFESSIONAL REVIEW":
+      return "Stop";
+    default:
+      return "Insufficient data";
+  }
+}
+
 export function formatShortDate(value: string | null | undefined): string {
   if (!value) return "—";
   const parsed = new Date(`${value}T00:00:00`);

@@ -1,67 +1,172 @@
 @import "tailwindcss";
 
 /*
- * Personal Readiness Assistant — design tokens.
+ * Personal Readiness Assistant — dual-theme design tokens.
  *
- * Direction: graphite and off-white neutrals, one elevated surface where it
- * carries meaning, status colour reserved for readiness meaning only.
- * Values continue the V1.1 palette (styles.DESIGN_TOKENS) so the migration keeps
- * one visual language.
+ * One design language, two complete themes. Light is warm, editorial and quiet;
+ * dark is a deep graphite sports-tech surface. Both share spacing, typography,
+ * component hierarchy, navigation and status semantics — only these tokens
+ * change, and every surface reads them from CSS variables so a theme switch is
+ * a paint, not a re-render.
  */
-@theme {
-  --color-background: #f6f6f3;
-  --color-surface: #ffffff;
-  --color-surface-muted: #fafaf7;
-  --color-foreground: #14161a;
-  --color-muted: #62666f;
-  --color-subtle: #e9e9e4;
-  --color-primary: #17191c;
-  --color-primary-foreground: #f8f7f4;
 
-  --radius-card: 1.125rem;
-  --radius-control: 0.75rem;
-
-  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-}
+/* Class-based dark mode: the inline theme script sets `.dark` on <html>. */
+@custom-variant dark (&:where(.dark, .dark *));
 
 :root {
-  --status-green: #1c7a4d;
-  --status-green-soft: #eaf5ee;
-  --status-green-line: #cfe7d8;
-  --status-amber: #9c5c00;
-  --status-amber-soft: #fdf3e3;
-  --status-amber-line: #f0dcb4;
-  --status-red: #ad241c;
-  --status-red-soft: #fdecea;
-  --status-red-line: #f3cfcb;
-
-  --shadow-surface: 0 1px 2px rgba(20, 22, 26, 0.04);
-  --shadow-raised: 0 6px 24px -12px rgba(20, 22, 26, 0.18);
   color-scheme: light;
+
+  /* Surfaces */
+  --background: #f6f4ef;
+  --surface-primary: #ffffff;
+  --surface-secondary: #eceef0;
+  --surface-elevated: #ffffff;
+
+  /* Text */
+  --text-primary: #14171a;
+  --text-secondary: #474d55;
+  --text-muted: #7a8189;
+
+  /* Lines */
+  --border-subtle: #e4e2da;
+  --border-strong: #d3d0c6;
+
+  /* Accent — soft cyan / blue */
+  --accent-primary: #0d7c93;
+  --accent-secondary: #79c3d3;
+  --accent-soft: #e2f1f5;
+  --accent-contrast: #04262e;
+
+  /* Primary action ink (flips in dark so the CTA never disappears) */
+  --ink: #15181b;
+  --ink-foreground: #f8f7f3;
+
+  /* Status — identical meaning in both themes */
+  --status-green: #1f7a55;
+  --status-green-soft: #e7f3ec;
+  --status-green-line: #cde5d8;
+  --status-amber: #93600f;
+  --status-amber-soft: #f8f0e0;
+  --status-amber-line: #ecdcc0;
+  --status-red: #ad4638;
+  --status-red-soft: #fbece9;
+  --status-red-line: #f0d2cc;
+
+  /* Charts */
+  --chart-grid: #e4e2da;
+  --chart-line: #0d7c93;
+  --chart-mean: #9aa0a6;
+  --chart-baseline: #b6b3a8;
+
+  /* Neutrals used by skeletons and quiet fills */
+  --muted-soft: #eae8e1;
+  --ring-track: #e6e4dc;
+
+  /* Elevation */
+  --shadow-soft: 0 1px 2px rgba(20, 23, 26, 0.05);
+  --shadow-raised: 0 22px 45px -32px rgba(20, 23, 26, 0.5), 0 2px 8px -5px rgba(20, 23, 26, 0.16);
+  --shadow-nav: 0 -12px 30px -24px rgba(20, 23, 26, 0.5);
+
+  /* Shape */
+  --radius-card: 1.375rem;
+  --radius-control: 0.875rem;
+}
+
+.dark {
+  color-scheme: dark;
+
+  --background: #0e1215;
+  --surface-primary: #161c21;
+  --surface-secondary: #1d262c;
+  --surface-elevated: #1b232a;
+
+  --text-primary: #f2f1ec;
+  --text-secondary: #b7bec6;
+  --text-muted: #8b939c;
+
+  --border-subtle: #263039;
+  --border-strong: #33414b;
+
+  --accent-primary: #4ec8de;
+  --accent-secondary: #2b8ea6;
+  --accent-soft: #123039;
+  --accent-contrast: #04222a;
+
+  --ink: #f1efe9;
+  --ink-foreground: #12161a;
+
+  --status-green: #58c08d;
+  --status-green-soft: #143026;
+  --status-green-line: #295a44;
+  --status-amber: #e0ab5b;
+  --status-amber-soft: #322611;
+  --status-amber-line: #5b472a;
+  --status-red: #e58b7f;
+  --status-red-soft: #341c1b;
+  --status-red-line: #5f322e;
+
+  --chart-grid: #232c33;
+  --chart-line: #4ec8de;
+  --chart-mean: #7d868f;
+  --chart-baseline: #5d666e;
+
+  --muted-soft: #222b31;
+  --ring-track: #26313a;
+
+  --shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-raised: 0 24px 50px -34px rgba(0, 0, 0, 0.9), 0 2px 8px -5px rgba(0, 0, 0, 0.5);
+  --shadow-nav: 0 -12px 30px -22px rgba(0, 0, 0, 0.85);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-surface: var(--surface-primary);
+  --color-surface-muted: var(--surface-secondary);
+  --color-surface-elevated: var(--surface-elevated);
+  --color-foreground: var(--text-primary);
+  --color-secondary: var(--text-secondary);
+  --color-muted: var(--text-muted);
+  --color-subtle: var(--border-subtle);
+  --color-strong: var(--border-strong);
+  --color-primary: var(--ink);
+  --color-primary-foreground: var(--ink-foreground);
+  --color-accent: var(--accent-primary);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-contrast: var(--accent-contrast);
+  --color-muted-soft: var(--muted-soft);
+
+  --radius-card: var(--radius-card);
+  --radius-control: var(--radius-control);
+
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 }
 
 @layer base {
   html {
     -webkit-text-size-adjust: 100%;
-    background-color: var(--color-background);
+    background-color: var(--background);
   }
 
   body {
-    @apply bg-background font-sans text-foreground antialiased;
-    overflow-x: hidden;
+    @apply font-sans antialiased;
+    background-color: var(--background);
+    color: var(--text-primary);
     font-feature-settings: "cv11", "ss01";
+    overflow-x: hidden;
+    /* A theme change is a quiet fade, never a flash. */
+    transition: background-color 220ms ease, color 220ms ease;
   }
 
   /* One visible focus treatment for every interactive element. */
   :where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
-    outline: 2px solid var(--color-primary);
+    outline: 2px solid var(--accent-primary);
     outline-offset: 2px;
-    border-radius: 6px;
+    border-radius: 8px;
   }
 
   ::selection {
-    background-color: var(--color-primary);
-    color: var(--color-primary-foreground);
+    background-color: var(--accent-primary);
+    color: var(--accent-contrast);
   }
 }
 
@@ -78,8 +183,7 @@
 /*
  * Mobile Safari zooms the whole page when a focused form control renders below
  * 16px. Every control is 16px on small screens and returns to the denser
- * desktop size above the md breakpoint, which keeps the layout untouched and
- * avoids the usual maximum-scale hack.
+ * desktop size above the md breakpoint.
  */
 @media (max-width: 767px) {
   input,
@@ -89,81 +193,115 @@
   }
 }
 
-/* Typographic scale: one hero number, one title level, calm body, quiet meta. */
+/* ------------------------------------------------------------------ */
+/* Typography                                                          */
+/* ------------------------------------------------------------------ */
+
+/* The largest type on a screen is the answer: the readiness score. */
 @utility display-hero {
-  font-size: clamp(3.4rem, 13vw, 4.5rem);
-  font-weight: 620;
+  font-size: clamp(2.9rem, 12vw, 3.4rem);
+  font-weight: 650;
   letter-spacing: -0.045em;
-  line-height: 0.9;
+  line-height: 1;
   font-variant-numeric: tabular-nums;
 }
 
-/*
- * Consumer refresh: the decision carries the largest type on a screen, the
- * status stays quiet above it, and evidence never competes with either.
- */
+/* The daily recommendation. */
+@utility title-hero {
+  font-size: clamp(1.85rem, 7.6vw, 2.25rem);
+  font-weight: 650;
+  letter-spacing: -0.032em;
+  line-height: 1.04;
+}
+
 @utility title-decision {
-  font-size: clamp(1.9rem, 7.4vw, 2.3rem);
-  font-weight: 640;
-  letter-spacing: -0.028em;
-  line-height: 1.05;
-}
-
-@utility title-metric {
-  font-size: 1.35rem;
-  font-weight: 620;
-  letter-spacing: -0.02em;
-  line-height: 1.1;
-  font-variant-numeric: tabular-nums;
+  font-size: clamp(1.75rem, 7.2vw, 2.1rem);
+  font-weight: 650;
+  letter-spacing: -0.03em;
+  line-height: 1.06;
 }
 
 @utility title-page {
-  font-size: 1.6rem;
-  font-weight: 620;
-  letter-spacing: -0.02em;
+  font-size: 1.5rem;
+  font-weight: 640;
+  letter-spacing: -0.022em;
   line-height: 1.15;
 }
 
 @utility title-section {
   font-size: 1.0625rem;
   font-weight: 600;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.012em;
   line-height: 1.3;
 }
 
-/*
- * Labels are used sparingly. `label-quiet` is the default for a small caption;
- * `eyebrow` (all caps) is reserved for a screen-level kicker so the interface
- * does not open every block with a tiny uppercase tag.
- */
-@utility label-quiet {
-  font-size: 0.72rem;
-  font-weight: 500;
-  color: var(--color-muted);
+@utility title-metric {
+  font-size: 1.5rem;
+  font-weight: 650;
+  letter-spacing: -0.025em;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
 }
 
-@utility eyebrow {
-  font-size: 0.72rem;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--color-muted);
+@utility label-quiet {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text-muted);
 }
+
+/* All-caps labels stay rare: a screen-level kicker, never a block per card. */
+@utility eyebrow {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* ------------------------------------------------------------------ */
+/* Surfaces                                                            */
+/* ------------------------------------------------------------------ */
 
 @utility surface {
-  background-color: var(--color-surface);
-  border: 1px solid var(--color-subtle);
+  background-color: var(--surface-primary);
+  border: 1px solid var(--border-subtle);
   border-radius: var(--radius-card);
-  box-shadow: var(--shadow-surface);
+  box-shadow: var(--shadow-soft);
 }
 
 @utility surface-raised {
-  background-color: var(--color-surface);
-  border: 1px solid var(--color-subtle);
+  background-color: var(--surface-primary);
+  border: 1px solid var(--border-subtle);
   border-radius: var(--radius-card);
   box-shadow: var(--shadow-raised);
 }
 
+/* A quiet grouped panel: shape without a border. */
+@utility surface-flat {
+  background-color: var(--surface-secondary);
+  border-radius: var(--radius-card);
+}
+
+@utility well {
+  background-color: var(--surface-secondary);
+  border-radius: var(--radius-control);
+}
+
 @utility divider {
-  border-top: 1px solid var(--color-subtle);
+  border-top: 1px solid var(--border-subtle);
+}
+
+@utility hairline {
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+/* A list whose rows are separated by one hairline, never by a box. */
+@utility hairline-list {
+  & > * + * {
+    border-top: 1px solid var(--border-subtle);
+  }
+}
+
+@utility ring-track {
+  stroke: var(--ring-track);
 }

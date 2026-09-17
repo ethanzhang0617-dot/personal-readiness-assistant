@@ -40,6 +40,8 @@ export interface ActionResult {
 interface UserStateContextValue {
   ready: boolean;
   busy: boolean;
+  /** The free-tier API may be waking; the UI shows a calm state, not an error. */
+  waking: boolean;
   error: string | null;
   storageAvailable: boolean;
   state: UserState | null;
@@ -99,6 +101,7 @@ export function UserStateProvider({ children }: { children: ReactNode }) {
   const [today, setToday] = useState<TodayResponse | null>(null);
   const [ready, setReady] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [waking, setWaking] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [storageAvailable, setStorageAvailable] = useState(false);
   const bootstrapped = useRef(false);
@@ -173,11 +176,19 @@ export function UserStateProvider({ children }: { children: ReactNode }) {
           stored.states,
           (stored.chats as Record<string, ChatMessage[]>) ?? {},
         );
+        setWaking(false);
         setReady(true);
         return;
       }
 
-      const base = await api.stateBase(DEFAULT_PROFILE_ID);
+      // A free-tier backend can take a while to wake up. Retry quietly before
+      // showing anything that looks like a failure.
+      let base = await api.stateBase(DEFAULT_PROFILE_ID);
+      for (let attempt = 0; attempt < 4 && !base.ok; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        base = await api.stateBase(DEFAULT_PROFILE_ID);
+      }
+      setWaking(false);
       if (!base.ok) {
         setError(base.error);
         setReady(true);
@@ -536,12 +547,14 @@ export function UserStateProvider({ children }: { children: ReactNode }) {
         (stored.chats as Record<string, ChatMessage[]>) ?? {},
       );
     }
+    setWaking(false);
     setReady(true);
   }, [refreshToday]);
 
   const value: UserStateContextValue = {
     ready,
     busy,
+    waking,
     error,
     storageAvailable,
     state,

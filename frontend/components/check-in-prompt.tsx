@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowUpRight, CalendarDays } from "lucide-react";
+import { ArrowUpRight, Sunrise } from "lucide-react";
 
 import { todayIso, useUserState } from "@/lib/state-provider";
 import { cn } from "@/lib/utils";
@@ -15,18 +15,22 @@ export function CheckInPrompt({ className }: { className?: string }) {
     <Link
       href="/check-in"
       className={cn(
-        "divider flex min-h-12 items-center justify-between gap-3 pt-4 text-sm transition-colors hover:text-foreground",
+        "flex min-h-14 items-center justify-between gap-3 rounded-[var(--radius-card)] bg-surface-secondary px-4 py-3 transition-colors hover:bg-accent-soft",
         className,
       )}
     >
-      <span className="flex min-w-0 items-center gap-2.5">
-        <CalendarDays className="h-4 w-4 shrink-0 text-muted" aria-hidden />
-        <span className="truncate">
-          <span className="font-medium">Morning check-in</span>
-          <span className="ml-2 text-muted">{checkedIn ? "recorded today" : "not recorded · demo scenario"}</span>
+      <span className="flex min-w-0 items-center gap-3">
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface text-muted">
+          <Sunrise className="h-4 w-4" aria-hidden />
+        </span>
+        <span className="min-w-0">
+          <span className="block text-[0.86rem] font-medium">Morning check-in</span>
+          <span className="block truncate text-[0.74rem] text-muted">
+            {checkedIn ? "Recorded today" : "Not recorded · demo scenario"}
+          </span>
         </span>
       </span>
-      <span className="flex shrink-0 items-center gap-1 text-[0.78rem] font-semibold">
+      <span className="flex shrink-0 items-center gap-1 text-[0.8rem] font-semibold text-accent">
         {checkedIn ? "Update" : "Check in"}
         <ArrowUpRight className="h-3.5 w-3.5" aria-hidden />
       </span>

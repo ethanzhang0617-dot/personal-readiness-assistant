@@ -9,8 +9,9 @@ export interface SegmentedOption<T extends string | number> {
 }
 
 /**
- * Segmented control: fast, touch-sized selection for short option sets such as
- * the 1–5 wellness scales or the Insights time window.
+ * Segmented control: fast, touch-sized selection for short option sets — the
+ * 1–5 wellness scales, the Insights window, the calibration answers and the
+ * appearance preference.
  */
 export function Segmented<T extends string | number>({
   options,
@@ -28,7 +29,11 @@ export function Segmented<T extends string | number>({
   className?: string;
 }) {
   return (
-    <div className={cn("flex gap-1 rounded-[var(--radius-control)] bg-surface-muted p-1", className)} role="group" aria-label={label}>
+    <div
+      className={cn("flex gap-1 rounded-[var(--radius-control)] bg-surface-muted p-1", className)}
+      role="group"
+      aria-label={label}
+    >
       {options.map((option) => {
         const active = option.value === value;
         return (
@@ -38,16 +43,18 @@ export function Segmented<T extends string | number>({
             aria-pressed={active}
             onClick={() => onChange(option.value)}
             className={cn(
-              "flex-1 rounded-[0.6rem] font-semibold transition-colors",
+              "flex-1 rounded-[0.65rem] font-semibold transition-[background-color,color,box-shadow] duration-150",
               // Touch targets stay 44px on small screens; the compact size is a
               // desktop-only density choice.
               size === "md" ? "min-h-11" : "min-h-11 md:min-h-9",
-              active ? "bg-primary text-primary-foreground" : "text-muted hover:bg-subtle/60",
+              active
+                ? "bg-surface text-foreground shadow-[var(--shadow-soft)]"
+                : "text-muted hover:text-foreground",
             )}
           >
-            <span className="block text-sm leading-tight">{option.label}</span>
+            <span className="block px-2 text-[0.84rem] leading-tight">{option.label}</span>
             {option.hint && active ? (
-              <span className="mt-0.5 block text-[0.62rem] font-normal opacity-80">{option.hint}</span>
+              <span className="mt-0.5 block text-[0.62rem] font-normal text-muted">{option.hint}</span>
             ) : null}
           </button>
         );
