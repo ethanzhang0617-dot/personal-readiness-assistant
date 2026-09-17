@@ -1,3 +1,4 @@
+import { sentenceCase } from "@/lib/format";
 import type { DecisionTraceStep } from "@/types/api";
 import { cn } from "@/lib/utils";
 
@@ -24,7 +25,7 @@ export function SessionTrace({ steps, className }: { steps: DecisionTraceStep[];
             ) : null}
           </span>
           <div className="min-w-0 flex-1">
-            <p className="text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-muted">{step.step}</p>
+            <p className="label-quiet">{sentenceCase(step.step)}</p>
             <p className="text-[0.82rem] leading-snug">{step.value}</p>
           </div>
         </li>

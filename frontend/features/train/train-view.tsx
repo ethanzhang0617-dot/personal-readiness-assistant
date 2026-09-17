@@ -4,15 +4,12 @@ import Link from "next/link";
 import { Info } from "lucide-react";
 import { useMemo, useState } from "react";
 
-import { DecisionTrace } from "@/components/decision-trace";
+import { ActiveSessionPanel } from "@/components/active-session";
 import { ExposureList } from "@/components/exposure-list";
 import { PageHeader } from "@/components/page-header";
-import { ActiveSessionPanel } from "@/components/active-session";
-import { PersonalResponseSummary, ResponseEpisodeList } from "@/components/personal-response";
 import { PostSessionFeedback } from "@/components/post-session-feedback";
 import { StatePanel } from "@/components/state-panel";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { Section } from "@/components/ui/section";
 import { Segmented } from "@/components/ui/segmented";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -30,6 +27,12 @@ interface SessionOption {
   log_defaults: SessionLogDefaults | null;
   isPrimary: boolean;
 }
+
+// Train is an execution surface, not a second dashboard.
+//
+// Pre-session it shows today's session and the single action. Once a session is
+// running the page switches to a focused session mode: guidance, one optional
+// checkpoint and completion — the dashboard does not render underneath it.
 
 export function TrainView() {
   const { ready, today, error, logSession, startSession, busy } = useUserState();
@@ -97,6 +100,10 @@ export function TrainView() {
 
   const recommendation = today.training.recommendation;
   const isStop = today.readiness.safety_active;
+  const active = today.active_session ?? null;
+  const exposureBelowTarget = today.training.exposure.groups.filter(
+    (group) => (group.target ?? 0) > 0 && group.value < (group.target ?? 0),
+  ).length;
 
   const submitLog = async () => {
     setOutcome(null);
@@ -129,8 +136,143 @@ export function TrainView() {
     }
   };
 
+  const logForm = (
+    <div className="space-y-4">
+      {outcome ? <p className="text-[0.8rem] font-medium text-[var(--status-green)]">{outcome}</p> : null}
+      {failure ? <p className="text-[0.8rem] font-medium text-[var(--status-red)]">{failure}</p> : null}
+
+      <div className="grid grid-cols-2 gap-3">
+        <label className="block">
+          <span className="text-[0.78rem] font-medium">
+            Duration <span className="text-muted">min</span>
+          </span>
+          <input
+            type="number"
+            inputMode="numeric"
+            min={1}
+            step={5}
+            value={duration || String(defaultDuration)}
+            onChange={(event) => setDuration(event.target.value)}
+            className="mt-1.5 min-h-11 w-full rounded-[var(--radius-control)] border border-subtle bg-surface px-3 text-sm"
+          />
+        </label>
+        <label className="block">
+          <span className="text-[0.78rem] font-medium">Session RPE</span>
+          <input
+            type="number"
+            inputMode="numeric"
+            min={1}
+            max={10}
+            value={rpe}
+            onChange={(event) => setRpe(Math.min(10, Math.max(1, Number(event.target.value) || 1)))}
+            className="mt-1.5 min-h-11 w-full rounded-[var(--radius-control)] border border-subtle bg-surface px-3 text-sm"
+          />
+          <span className="mt-1 block text-[0.66rem] text-muted">1 = very easy · 10 = maximal</span>
+        </label>
+      </div>
+
+      {(selected?.log_defaults?.exercises ?? []).length > 0 ? (
+        <div className="space-y-1.5">
+          <p className="text-[0.78rem] font-medium">Actual completed sets</p>
+          {(selected?.log_defaults?.exercises ?? []).map((exercise) => (
+            <label key={exercise.name} className="flex min-h-11 items-center justify-between gap-3 text-[0.8rem]">
+              <span className="min-w-0 truncate">{exercise.name}</span>
+              <input
+                type="number"
+                min={0}
+                max={20}
+                aria-label={`${exercise.name} actual sets`}
+                value={actualSets[exercise.name] ?? exercise.prescribed_sets}
+                onChange={(event) =>
+                  setActualSets((current) => ({ ...current, [exercise.name]: Number(event.target.value) || 0 }))
+                }
+                className="min-h-11 w-20 rounded-[var(--radius-control)] border border-subtle bg-surface px-2 text-right text-[0.8rem] md:min-h-10"
+              />
+            </label>
+          ))}
+        </div>
+      ) : null}
+
+      <div className="space-y-1.5">
+        <p className="text-[0.78rem] font-medium">Completion</p>
+        <Segmented
+          options={[
+            { value: "Completed", label: "Completed" },
+            { value: "Partial", label: "Partial" },
+          ]}
+          value={completion}
+          size="sm"
+          label="Completion status"
+          onChange={(value) => setCompletion(value as "Completed" | "Partial")}
+        />
+      </div>
+
+      <label className="block">
+        <span className="text-[0.78rem] font-medium">
+          Notes <span className="text-muted">optional</span>
+        </span>
+        <input
+          type="text"
+          value={notes}
+          onChange={(event) => setNotes(event.target.value)}
+          className="mt-1.5 min-h-11 w-full rounded-[var(--radius-control)] border border-subtle bg-surface px-3 text-sm"
+        />
+      </label>
+
+      <Button size="lg" variant="primary" className="w-full" disabled={busy || isStop} onClick={() => void submitLog()}>
+        {busy ? "Saving…" : "Log completed workout"}
+      </Button>
+    </div>
+  );
+
+  // --------------------------------------------------------------------- //
+  // Focused session mode: the running session replaces the dashboard.
+  // --------------------------------------------------------------------- //
+  if (active) {
+    return (
+      <div className="space-y-6">
+        <PageHeader
+          eyebrow="Train"
+          title={recommendation.primary_name}
+          description={`${recommendation.session_demand} · ${recommendation.duration} · ${recommendation.rir_guidance ?? "effort guidance unavailable"}`}
+        />
+
+        {isStop ? (
+          <StatePanel
+            tone="error"
+            title="Safety routing is active"
+            body="Normal workout guidance is disabled while a safety flag is selected, and logging a normal session is disabled too."
+          />
+        ) : null}
+
+        <ActiveSessionPanel active={active} sessionTrace={today.session_trace ?? []} />
+
+        <details className="surface group px-4 py-3">
+          <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 text-[0.88rem] font-semibold">
+            Complete session
+            <span className="text-[0.72rem] font-normal text-muted">RPE, sets, notes</span>
+          </summary>
+          <div className="pt-4">{logForm}</div>
+        </details>
+
+        {loggedSessionId ? (
+          <Section eyebrow="Personal response" title="Session feedback" divided={false}>
+            <PostSessionFeedback
+              sessionId={loggedSessionId}
+              focus={recommendation.primary_name}
+              onDone={(message) => setOutcome(message)}
+            />
+          </Section>
+        ) : null}
+      </div>
+    );
+  }
+
+  // --------------------------------------------------------------------- //
+  // Pre-session: today's session, one action, and quiet links out.
+  // --------------------------------------------------------------------- //
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <PageHeader
         eyebrow="Train"
         title={recommendation.primary_name}
@@ -145,232 +287,157 @@ export function TrainView() {
         />
       ) : null}
 
-      {/* Start → active → calibrate → complete → feedback. The active panel sits
-          directly under the header so the flow reads in order on a phone. */}
-      {today.active_session ? (
-        <ActiveSessionPanel active={today.active_session} sessionTrace={today.session_trace ?? []} />
-      ) : (
-        <Section eyebrow="Session" title="Start session" divided={false}>
-          <p className="text-[0.8rem] leading-relaxed text-muted">
-            Starting a session keeps today&apos;s guidance on screen and lets you take one optional checkpoint while you
-            train. You can still log the session without starting it, and nothing is logged until you complete it.
-          </p>
-          <Button
-            size="lg"
-            variant="primary"
-            className="mt-3 w-full"
-            disabled={busy || isStop}
-            onClick={() => void startSession(selected?.prescription_id ?? null)}
-          >
-            {busy ? "Starting…" : "Start session"}
-          </Button>
-        </Section>
-      )}
+      <section className="surface-raised px-5 py-5">
+        <p className="label-quiet">Today&apos;s session</p>
+        <h2 className="title-decision mt-1.5">{selected?.name ?? recommendation.primary_name}</h2>
+        <p className="mt-1.5 text-[0.84rem] text-muted">
+          {[selected?.intensity, selected?.duration, recommendation.rir_guidance]
+            .filter(Boolean)
+            .join(" · ")}
+        </p>
+
+        <Button
+          size="lg"
+          variant="primary"
+          className="mt-4 w-full"
+          disabled={busy || isStop}
+          onClick={() => void startSession(selected?.prescription_id ?? null)}
+        >
+          {busy ? "Starting…" : "Start Session"}
+        </Button>
+
+        <details className="group mt-3">
+          <summary className="flex min-h-10 cursor-pointer list-none items-center justify-between gap-3 text-[0.78rem] font-medium">
+            Prescribed work
+            <span className="text-muted">
+              {(selected?.template?.items ?? []).length} items
+            </span>
+          </summary>
+          <div className="pt-2">
+            <ul className="divide-y divide-subtle border-y border-subtle">
+              {(selected?.template?.items ?? []).map((item) => (
+                <li key={item} className="py-2.5 text-[0.86rem]">
+                  {item}
+                </li>
+              ))}
+            </ul>
+            {selected?.template?.note ? (
+              <p className="mt-2 text-[0.7rem] text-muted">{selected.template.note}</p>
+            ) : null}
+          </div>
+        </details>
+      </section>
 
       {options.length > 1 ? (
-        <Segmented
-          options={options.map((option) => ({
-            value: option.prescription_id ?? option.name,
-            label: option.name,
-          }))}
-          value={selected?.prescription_id ?? selected?.name ?? ""}
-          size="sm"
-          label="Session choice"
-          onChange={(value) => {
-            setSelectedId(String(value));
-            setActualSets({});
-          }}
-        />
+        <div>
+          <p className="label-quiet mb-2">Alternative</p>
+          <Segmented
+            options={options.map((option) => ({
+              value: option.prescription_id ?? option.name,
+              label: option.name,
+            }))}
+            value={selected?.prescription_id ?? selected?.name ?? ""}
+            size="sm"
+            label="Session choice"
+            onChange={(value) => {
+              setSelectedId(String(value));
+              setActualSets({});
+            }}
+          />
+        </div>
       ) : null}
 
-      <Section
-        eyebrow={selected?.isPrimary ? "Primary recommendation" : "Rule-generated alternative"}
-        // The page title already names the primary session; only an alternative
-        // needs its own heading so the two never duplicate each other.
-        title={selected?.isPrimary ? undefined : (selected?.template?.title ?? selected?.name)}
-        description={[selected?.intensity, selected?.duration].filter(Boolean).join(" · ")}
-      >
-        <ul className="divide-y divide-subtle border-y border-subtle">
-          {(selected?.template?.items ?? []).map((item) => (
-            <li key={item} className="py-2.5 text-[0.86rem]">
-              {item}
-            </li>
-          ))}
-        </ul>
-        {selected?.template?.note ? (
-          <p className="mt-2 text-[0.68rem] text-muted">{selected.template.note}</p>
-        ) : null}
-        {recommendation.alternatives.length > 0 ? (
-          <p className="mt-2 text-[0.68rem] text-muted">
-            Choosing an alternative never replaces the primary recommendation.
-          </p>
-        ) : null}
-      </Section>
+      <p className="divider pt-4 text-[0.74rem] text-muted">
+        {exposureBelowTarget === 0
+          ? "Every muscle group is at or above its weekly target."
+          : `${exposureBelowTarget} muscle group${exposureBelowTarget === 1 ? "" : "s"} below this week's target.`}
+      </p>
 
-      <Section eyebrow="This week" title="Weekly exposure">
-        <ExposureList exposure={today.training.exposure} />
-      </Section>
+      <details className="group">
+        <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 text-[0.86rem] font-medium">
+          Weekly exposure
+          <span className="text-[0.72rem] text-muted">7 muscle groups</span>
+        </summary>
+        <div className="pt-3">
+          <ExposureList exposure={today.training.exposure} />
+        </div>
+      </details>
 
-      <Section
-        eyebrow="History"
-        title="Recent sessions"
-        description={`${today.training.history.length} completed sessions, newest first.`}
-      >
-        {today.training.history.length > 0 ? (
-          <ul className="divide-y divide-subtle border-y border-subtle">
-            {today.training.history.map((session) => (
-              <li key={`${session.date}-${session.focus}`} className="flex min-h-12 items-center justify-between gap-3">
-                <span className="min-w-0">
-                  <span className="block truncate text-[0.86rem] font-medium">
-                    {session.focus ?? session.training_type ?? "Session"}
+      <details className="divider group pt-4">
+        <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 text-[0.86rem] font-medium">
+          Recent sessions
+          <span className="text-[0.72rem] text-muted">{today.training.history.length} completed</span>
+        </summary>
+        <div className="pt-2">
+          {today.training.history.length > 0 ? (
+            <ul className="divide-y divide-subtle border-y border-subtle">
+              {today.training.history.map((session) => (
+                <li key={`${session.date}-${session.focus}`} className="flex min-h-12 items-center justify-between gap-3">
+                  <span className="min-w-0">
+                    <span className="block truncate text-[0.86rem] font-medium">
+                      {session.focus ?? session.training_type ?? "Session"}
+                    </span>
+                    <span className="text-[0.7rem] text-muted">{formatShortDate(session.date)}</span>
                   </span>
-                  <span className="text-[0.7rem] text-muted">{formatShortDate(session.date)}</span>
-                </span>
-                <span className="shrink-0 text-right text-[0.74rem] text-muted">
-                  {session.session_rpe !== null ? `RPE ${formatNumber(session.session_rpe)}` : "—"}
-                  {session.duration_min !== null ? ` · ${formatNumber(session.duration_min)} min` : ""}
-                  {session.working_sets !== null ? ` · ${formatNumber(session.working_sets)} sets` : ""}
-                </span>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <StatePanel
-            tone="empty"
-            title="No completed sessions yet"
-            body="Log today's session below and it will appear here, update weekly exposure and feed the next recommendation."
-          />
-        )}
-      </Section>
-
-      <DecisionTrace steps={today.training.decision_trace} rationale={recommendation.rationale} />
-
-      <Section
-        eyebrow="Personal response"
-        title="Response history"
-        description="Each episode links the session you logged, your feedback and the next check-in."
-      >
-        {today.personal_response ? (
-          <div className="space-y-4">
-            <PersonalResponseSummary response={today.personal_response} />
-            <ResponseEpisodeList episodes={today.personal_response.episodes} limit={5} />
-          </div>
-        ) : null}
-      </Section>
-
-      <Section eyebrow="After training" title={today.active_session ? "Complete session" : "Log completed workout"}>
-        <Card className="space-y-4 p-4">
-          <p className="text-[0.72rem] leading-relaxed text-muted">
-            Seven-day exposure uses the sets you actually completed. Logging here updates exposure, training load and the
-            next recommendation immediately.
-            {today.active_session?.calibration
-              ? " Your in-session checkpoint travels with this session into the response episode."
-              : ""}
-          </p>
-          {outcome ? <p className="text-[0.8rem] font-medium text-[var(--status-green)]">{outcome}</p> : null}
-          {failure ? <p className="text-[0.8rem] font-medium text-[var(--status-red)]">{failure}</p> : null}
-
-          <div className="grid grid-cols-2 gap-3">
-            <label className="block">
-              <span className="text-[0.78rem] font-medium">
-                Duration <span className="text-muted">min</span>
-              </span>
-              <input
-                type="number"
-                inputMode="numeric"
-                min={1}
-                step={5}
-                value={duration || String(defaultDuration)}
-                onChange={(event) => setDuration(event.target.value)}
-                className="mt-1.5 min-h-11 w-full rounded-[var(--radius-control)] border border-subtle bg-surface px-3 text-sm"
-              />
-            </label>
-            <label className="block">
-              <span className="text-[0.78rem] font-medium">Session RPE</span>
-              <input
-                type="number"
-                inputMode="numeric"
-                min={1}
-                max={10}
-                value={rpe}
-                onChange={(event) => setRpe(Math.min(10, Math.max(1, Number(event.target.value) || 1)))}
-                className="mt-1.5 min-h-11 w-full rounded-[var(--radius-control)] border border-subtle bg-surface px-3 text-sm"
-              />
-              <span className="mt-1 block text-[0.66rem] text-muted">1 = very easy · 10 = maximal</span>
-            </label>
-          </div>
-
-          {(selected?.log_defaults?.exercises ?? []).length > 0 ? (
-            <div className="space-y-1.5">
-              <p className="text-[0.78rem] font-medium">Actual completed sets</p>
-              {(selected?.log_defaults?.exercises ?? []).map((exercise) => (
-                <label key={exercise.name} className="flex min-h-11 items-center justify-between gap-3 text-[0.8rem]">
-                  <span className="min-w-0 truncate">{exercise.name}</span>
-                  <input
-                    type="number"
-                    min={0}
-                    max={20}
-                    aria-label={`${exercise.name} actual sets`}
-                    value={actualSets[exercise.name] ?? exercise.prescribed_sets}
-                    onChange={(event) =>
-                      setActualSets((current) => ({ ...current, [exercise.name]: Number(event.target.value) || 0 }))
-                    }
-                    className="min-h-11 w-20 rounded-[var(--radius-control)] border border-subtle bg-surface px-2 text-right text-[0.8rem] md:min-h-10"
-                  />
-                </label>
+                  <span className="shrink-0 text-right text-[0.74rem] text-muted">
+                    {session.session_rpe !== null ? `RPE ${formatNumber(session.session_rpe)}` : "—"}
+                    {session.duration_min !== null ? ` · ${formatNumber(session.duration_min)} min` : ""}
+                    {session.working_sets !== null ? ` · ${formatNumber(session.working_sets)} sets` : ""}
+                  </span>
+                </li>
               ))}
-            </div>
-          ) : null}
-
-          <div className="space-y-1.5">
-            <p className="text-[0.78rem] font-medium">Completion</p>
-            <Segmented
-              options={[
-                { value: "Completed", label: "Completed" },
-                { value: "Partial", label: "Partial" },
-              ]}
-              value={completion}
-              size="sm"
-              label="Completion status"
-              onChange={(value) => setCompletion(value as "Completed" | "Partial")}
+            </ul>
+          ) : (
+            <StatePanel
+              tone="empty"
+              title="No completed sessions yet"
+              body="Log today's session and it will appear here, update weekly exposure and feed the next recommendation."
             />
-          </div>
+          )}
+        </div>
+      </details>
 
-          <label className="block">
-            <span className="text-[0.78rem] font-medium">
-              Notes <span className="text-muted">optional</span>
-            </span>
-            <input
-              type="text"
-              value={notes}
-              onChange={(event) => setNotes(event.target.value)}
-              className="mt-1.5 min-h-11 w-full rounded-[var(--radius-control)] border border-subtle bg-surface px-3 text-sm"
-            />
-          </label>
-
-          <Button size="lg" variant="primary" className="w-full" disabled={busy || isStop} onClick={() => void submitLog()}>
-            {busy ? "Saving…" : "Log completed workout"}
-          </Button>
-        </Card>
-      </Section>
+      <details className="divider group pt-4">
+        <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 text-[0.86rem] font-medium">
+          Log completed workout
+          <span className="text-[0.72rem] text-muted">RPE, sets, notes</span>
+        </summary>
+        <div className="pt-4">{logForm}</div>
+      </details>
 
       {loggedSessionId ? (
         <Section eyebrow="Personal response" title="Session feedback" divided={false}>
-          <Card className="p-4">
-            <PostSessionFeedback
-              sessionId={loggedSessionId}
-              focus={recommendation.primary_name}
-              onDone={(message) => setOutcome(message)}
-            />
-          </Card>
+          <PostSessionFeedback
+            sessionId={loggedSessionId}
+            focus={recommendation.primary_name}
+            onDone={(message) => setOutcome(message)}
+          />
         </Section>
       ) : null}
 
+      <nav aria-label="Secondary" className="divider flex flex-wrap gap-x-5 gap-y-1 pt-4">
+        <Link
+          href="/decision-trace"
+          className="flex min-h-11 items-center text-[0.82rem] font-medium transition-colors hover:text-muted md:min-h-8"
+        >
+          Why this recommendation →
+        </Link>
+        <Link
+          href="/insights"
+          className="flex min-h-11 items-center text-[0.82rem] font-medium transition-colors hover:text-muted md:min-h-8"
+        >
+          Personal response →
+        </Link>
+        <Link href="/check-in" className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "hidden md:inline-flex")}>
+          Morning check-in
+        </Link>
+      </nav>
+
       <p className="flex items-start gap-2 text-[0.7rem] leading-relaxed text-muted">
         <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
-        Today&apos;s inputs come from the morning check-in. Changing them there replaces today&apos;s demo scenario.
+        Today&apos;s inputs come from the morning check-in.
       </p>
-      <Link href="/check-in" className={cn(buttonVariants({ variant: "secondary" }), "w-full")}>
+      <Link href="/check-in" className={cn(buttonVariants({ variant: "secondary" }), "w-full md:hidden")}>
         Go to morning check-in
       </Link>
     </div>

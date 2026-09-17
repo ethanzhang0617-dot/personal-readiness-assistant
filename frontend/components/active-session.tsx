@@ -5,7 +5,14 @@ import { useState } from "react";
 import { SessionTrace } from "@/components/session-trace";
 import { Button } from "@/components/ui/button";
 import { Segmented } from "@/components/ui/segmented";
-import { EFFORT_OPTIONS, PERFORMANCE_OPTIONS, RIR_OPTIONS, calibrationLabel, calibrationTone } from "@/lib/calibration";
+import {
+  CALIBRATION_HINTS,
+  EFFORT_OPTIONS,
+  PERFORMANCE_OPTIONS,
+  RIR_OPTIONS,
+  calibrationLabel,
+  calibrationTone,
+} from "@/lib/calibration";
 import { useUserState } from "@/lib/state-provider";
 import type { ActiveSession, Calibration, DecisionTraceStep } from "@/types/api";
 import { cn } from "@/lib/utils";
@@ -14,13 +21,14 @@ import { cn } from "@/lib/utils";
 //
 // This is deliberately NOT a workout tracker: it shows the guidance the product
 // already gave, asks three short questions once, and can only ever hold, ease or
-// optionally nudge within the range it already prescribed. It asks nothing about
-// sleep, HRV, stress or motivation — those belong to the morning check-in.
+// optionally nudge within the range it already prescribed. The result is three
+// lines — verdict, one reason, updated guidance — and the rule detail is one
+// deliberate expand away.
 
 function Stat({ label, value }: { label: string; value: string | null }) {
   return (
     <div className="min-w-0">
-      <p className="text-[0.66rem] uppercase tracking-[0.08em] text-muted">{label}</p>
+      <p className="label-quiet">{label}</p>
       <p className="mt-0.5 truncate text-[0.82rem] font-medium">{value ?? "—"}</p>
     </div>
   );
@@ -46,7 +54,7 @@ export function ActiveSessionPanel({
   const shown = result ?? (stored
     ? {
         result: (stored.result ?? "HOLD") as Calibration["result"],
-        reason: stored.reason ?? "Recorded during this session.",
+        reason: stored.reason ?? CALIBRATION_HINTS[String(stored.result ?? "HOLD")],
         guidance: stored.guidance ?? "",
         scope: "Within the effort range already prescribed — no tier, focus, exercise or volume change",
         note: "Stored with this session. It does not change the session demand, focus, exercises or volume.",
@@ -62,10 +70,10 @@ export function ActiveSessionPanel({
 
   return (
     <div className="space-y-4">
-      <div className="rounded-[var(--radius-card)] border border-subtle bg-surface-muted p-4">
-        <p className="eyebrow">Session in progress</p>
-        <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-3">
-          <Stat label="Session" value={active.primary_focus} />
+      <div className="surface-raised px-5 py-5">
+        <p className="label-quiet">Session in progress</p>
+        <h2 className="mt-1 text-[1.35rem] font-semibold tracking-tight">{active.primary_focus ?? "Session"}</h2>
+        <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3">
           <Stat
             label="How hard"
             value={
@@ -74,27 +82,19 @@ export function ActiveSessionPanel({
                 : active.session_demand
             }
           />
-          <Stat label="Effort guidance" value={active.planned_rir} />
           <Stat label="Duration" value={active.duration} />
+          <Stat label="Effort guidance" value={active.planned_rir} />
+          <Stat label="Current guidance" value={shown?.guidance ? "Updated" : "As prescribed"} />
         </dl>
-        {active.adjustment ? (
-          <p className="mt-3 text-[0.72rem] text-muted">
-            Today&apos;s demand already reflects your recent response. Completing the session does not change what you
-            train — only how hard.
-          </p>
-        ) : null}
       </div>
 
-      <div className="rounded-[var(--radius-card)] border border-subtle p-4">
-        <p className="text-[0.84rem] font-semibold">In-session checkpoint</p>
-        <p className="mt-0.5 text-[0.72rem] leading-relaxed text-muted">
-          Optional, once. It compares the session so far with the guidance you started with. It never changes the
-          session demand, the focus, the exercises or the volume.
-        </p>
+      <div className="surface px-5 py-5">
+        <h3 className="text-[0.95rem] font-semibold">How does it feel?</h3>
+        <p className="label-quiet mt-0.5">Optional, once per session.</p>
 
-        <div className="mt-3 space-y-3">
+        <div className="mt-4 space-y-3.5">
           <div>
-            <p className="text-[0.78rem] font-medium">Effort compared with expectation</p>
+            <p className="text-[0.8rem] font-medium">Effort</p>
             <Segmented
               options={EFFORT_OPTIONS.map((option) => ({ value: option, label: option }))}
               value={effort}
@@ -105,8 +105,8 @@ export function ActiveSessionPanel({
             />
           </div>
           <div>
-            <p className="text-[0.78rem] font-medium">
-              Actual RIR on a representative set
+            <p className="text-[0.8rem] font-medium">
+              RIR
               <span className="ml-2 font-normal text-muted">
                 {active.planned_rir ? `prescribed ${active.planned_rir}` : "0 = to failure"}
               </span>
@@ -132,7 +132,7 @@ export function ActiveSessionPanel({
             </button>
           </div>
           <div>
-            <p className="text-[0.78rem] font-medium">Performance feeling</p>
+            <p className="text-[0.8rem] font-medium">Performance</p>
             <Segmented
               options={PERFORMANCE_OPTIONS.map((option) => ({ value: option, label: option }))}
               value={performance}
@@ -146,29 +146,45 @@ export function ActiveSessionPanel({
 
         {error ? <p className="mt-3 text-[0.75rem] text-[var(--status-red)]">{error}</p> : null}
 
-        <Button size="md" variant="secondary" className="mt-3 w-full" disabled={busy} onClick={() => void submit()}>
-          {busy ? "Checking…" : result ? "Update the checkpoint" : "Check the plan"}
+        <Button size="lg" variant="primary" className="mt-4 w-full" disabled={busy} onClick={() => void submit()}>
+          {busy ? "Updating…" : result ? "Update guidance" : "Check how it feels"}
         </Button>
 
         {shown ? (
-          <div className="mt-4 space-y-2 border-t border-subtle pt-3">
+          <div className="divider mt-4 space-y-2 pt-4">
             <div className="flex items-center gap-2">
-              <span className={cn("rounded-full px-2 py-0.5 text-[0.62rem] font-semibold", calibrationTone(shown.result))}>
+              <span className={cn("rounded-full px-2.5 py-1 text-[0.7rem] font-semibold", calibrationTone(shown.result))}>
                 {calibrationLabel(shown.result)}
               </span>
-              <span className="text-[0.68rem] text-muted">{shown.scope}</span>
             </div>
-            <p className="text-[0.8rem] leading-relaxed">{shown.reason}</p>
-            <p className="text-[0.82rem] font-medium leading-relaxed">{shown.guidance}</p>
-            <p className="text-[0.68rem] leading-relaxed text-muted">{shown.note}</p>
+            <p className="text-[0.82rem] leading-relaxed">
+              {shown.reason || CALIBRATION_HINTS[String(shown.result)]}
+            </p>
+            {shown.guidance ? (
+              <p className="text-[0.86rem] font-medium leading-relaxed">{shown.guidance}</p>
+            ) : null}
+
+            <details className="group pt-1">
+              <summary className="flex min-h-10 cursor-pointer list-none items-center gap-1 text-[0.74rem] font-medium text-muted">
+                Why →
+                <span className="transition-transform group-open:rotate-90" aria-hidden>
+                  ›
+                </span>
+              </summary>
+              <p className="mt-1.5 text-[0.72rem] leading-relaxed text-muted">{shown.scope}</p>
+              <p className="mt-1 text-[0.72rem] leading-relaxed text-muted">{shown.note}</p>
+            </details>
           </div>
         ) : null}
       </div>
 
-      <div>
-        <p className="eyebrow">Session trace</p>
-        <SessionTrace steps={sessionTrace} className="mt-2" />
-      </div>
+      <details className="divider group pt-4">
+        <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 text-[0.86rem] font-medium">
+          Session trace
+          <span className="text-[0.72rem] text-muted">{sessionTrace.length} steps</span>
+        </summary>
+        <SessionTrace steps={sessionTrace} className="mt-3" />
+      </details>
 
       <button
         type="button"
