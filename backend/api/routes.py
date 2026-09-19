@@ -64,6 +64,10 @@ router = APIRouter(prefix="/api")
 #: deliberately not described here as the current implementation.
 PRODUCT_VERSION = "1.4"
 API_VERSION = "1.4"
+#: Human-readable project identity. The technical service id stays
+#: ``personal-readiness-assistant-api`` because deployment, monitoring and
+#: existing clients reference it.
+PRODUCT_NAME = "Agentic Sports-Science Adaptive Training Decision System"
 FRONTEND_STACK = "Next.js"
 BACKEND_STACK = "FastAPI"
 ENGINES = [
@@ -203,6 +207,7 @@ def health() -> dict[str, Any]:
     return {
         "status": "ok",
         "service": "personal-readiness-assistant-api",
+        "product_name": PRODUCT_NAME,
         "product_version": PRODUCT_VERSION,
         "api_version": API_VERSION,
         "frontend": FRONTEND_STACK,

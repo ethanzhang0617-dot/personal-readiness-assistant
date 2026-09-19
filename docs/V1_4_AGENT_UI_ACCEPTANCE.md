@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | Date | 2026-09-19 |
-| Product | Personal Readiness Assistant V1.4 (Agent layer) |
+| Product | Adaptive Training Decision System V1.4 (Agent layer) — formerly Personal Readiness Assistant |
 | Code under test | `v1.4-agent-layer` @ `4ee8d49` (the Agent UI itself is unchanged by the release-hardening changes) |
 | Environment | Next.js 16 dev server on `http://localhost:3000`, FastAPI on `http://127.0.0.1:8000`, real local provider credential configured |
 | Browser | Codex in-app browser (Chromium engine) |

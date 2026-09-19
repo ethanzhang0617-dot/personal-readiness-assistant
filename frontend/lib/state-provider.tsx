@@ -495,6 +495,8 @@ export function UserStateProvider({ children }: { children: ReactNode }) {
     if (!state) return null;
     return JSON.stringify(
       {
+        // Retained technical identifier: legacy project slug in the backup
+        // envelope, kept so existing exports stay importable.
         product: "personal-readiness-assistant",
         version: 2,
         exported_at: new Date().toISOString(),
@@ -519,7 +521,7 @@ export function UserStateProvider({ children }: { children: ReactNode }) {
         // Accept both the current multi-profile envelope and the single-profile file.
         const importedStates = parsed.states ?? (parsed.state ? { [parsed.state.profile_id]: parsed.state } : null);
         if (!importedStates || Object.keys(importedStates).length === 0) {
-          return { ok: false, error: "This file does not contain Personal Readiness data." };
+          return { ok: false, error: "This file does not contain data from this app." };
         }
         const importedChats = parsed.chats ?? {};
         const nextActive = parsed.active_profile_id ?? Object.keys(importedStates)[0];

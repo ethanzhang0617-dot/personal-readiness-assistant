@@ -1,5 +1,9 @@
 # Personal Readiness Assistant V1.0 — Final Patch QA Report
 
+> **Historical document (V1.0).** The project is now the Agentic Sports-Science Adaptive Training
+> Decision System (中文：基于运动科学与 Agent 的自适应训练决策系统). "Personal Readiness Assistant"
+> is the historical name used at the time of this release.
+
 > **Historical phase record.** The Qwen runtime rows below describe the V1.0/V1.1 state before the
 > explanation layer moved to the DeepSeek API in `docs/V1_1_DEEPSEEK_MIGRATION.md`. They are kept as
 > evidence of what was verified at that time, not as current configuration.

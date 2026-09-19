@@ -1,4 +1,5 @@
-"""Visual system for the Personal Readiness Assistant product shell.
+"""Visual system for the historical V1.1 Streamlit prototype
+(formerly Personal Readiness Assistant).
 
 Three layers live here and nowhere else:
 

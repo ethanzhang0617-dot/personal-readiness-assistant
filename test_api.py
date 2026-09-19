@@ -148,6 +148,16 @@ def test_coach_rejects_an_empty_question(client: TestClient) -> None:
     assert client.post("/api/coach/message", json={"question": ""}).status_code == 422
 
 
+def test_health_exposes_the_project_identity_and_keeps_the_technical_service_id(client: TestClient) -> None:
+    payload = client.get("/api/health").json()
+    # Human-readable identity (renamed project).
+    assert payload["product_name"] == "Agentic Sports-Science Adaptive Training Decision System"
+    # Technical id stays: deployment, monitoring and existing clients reference it.
+    assert payload["service"] == "personal-readiness-assistant-api"
+    assert payload["product_version"] == "1.4"
+    assert payload["api_version"] == "1.4"
+
+
 # --------------------------------------------------------------------------- #
 # CORS — this project's Vercel hosts only
 # --------------------------------------------------------------------------- #

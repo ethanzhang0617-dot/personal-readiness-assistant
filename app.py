@@ -1,4 +1,9 @@
-"""Personal Readiness Assistant — a public Streamlit product prototype."""
+"""Historical V1.1 Streamlit prototype of the Adaptive Training Decision System.
+
+Former project name: Personal Readiness Assistant. The current product is the
+Next.js frontend plus FastAPI backend; this file is kept as the V1.1 reference
+implementation and is not the primary product.
+"""
 
 from __future__ import annotations
 
@@ -39,7 +44,8 @@ from ui_components import context_chip
 from ui_components import mobile_bottom_nav_component, mobile_utility_nav_component
 
 
-st.set_page_config(page_title="Personal Readiness Assistant", page_icon="⚡", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="Personal Readiness Assistant (V1.1 legacy prototype)",
+                   page_icon="⚡", layout="wide", initial_sidebar_state="expanded")
 
 MORE_NAV_ITEMS = SECONDARY_NAV_ITEMS
 NAV_ITEMS = PRIMARY_NAV_ITEMS + SECONDARY_NAV_ITEMS

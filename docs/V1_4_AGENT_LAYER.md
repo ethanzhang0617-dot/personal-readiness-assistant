@@ -1,5 +1,9 @@
 # V1.4 — Agent Layer
 
+**Project:** Agentic Sports-Science Adaptive Training Decision System
+（中文：基于运动科学与 Agent 的自适应训练决策系统）— formerly Personal Readiness Assistant,
+which remains the name used through the V1.3/V1.4 release records below.
+
 **Branch:** `v1.4-agent-layer` (created from the V1.3 HEAD `55f05d4`)
 **Status:** implemented, tested, documented. No new chatbot, no second DeepSeek
 integration, no autonomous LLM training decisions.

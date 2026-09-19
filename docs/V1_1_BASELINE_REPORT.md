@@ -165,3 +165,6 @@ safe-area mechanism that cannot fire without `viewport-fit=cover`, and a chat-in
 on the Coach page.
 
 No product code was changed in Phase 1. Waiting for review before PHASE 2 — P0 Mobile Shell.
+# Historical document (V1.1). The project is now the Agentic Sports-Science Adaptive Training
+# Decision System (中文：基于运动科学与 Agent 的自适应训练决策系统); "Personal Readiness Assistant"
+# below is the historical name used at the time of that release.

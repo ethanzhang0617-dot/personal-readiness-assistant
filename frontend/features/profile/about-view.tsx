@@ -25,19 +25,31 @@ export function AboutView() {
       </Link>
 
       <PageHeader
-        title="Personal Readiness Assistant"
-        description="A readiness-aware strength-training decision assistant."
+        title="Adaptive Training Decision System"
+        description="Agentic Sports-Science Adaptive Training Decision System"
       />
 
       <div className="surface-flat space-y-3 p-5">
         <p className="text-[0.9rem] leading-relaxed">
-          It answers how ready you are today, what to train, how hard, and why — using your personal baseline,
+          An independent product project combining sports science, adaptive personal response, deterministic training
+          engines and a tool-using AI Agent to turn daily readiness into grounded, actionable training decisions.
+        </p>
+        <p className="text-[0.82rem] leading-relaxed text-muted">
+          基于运动科学与 Agent 的自适应训练决策系统
+        </p>
+        <p className="text-[0.82rem] leading-relaxed text-muted">
+          It answers how ready you are today, what to train, how hard and why — using your personal baseline,
           completed training and programme context.
         </p>
         <p className="text-[0.82rem] leading-relaxed text-muted">
           This is an educational, portfolio-stage prototype. Readiness thresholds, domain aggregation, comparison
           windows, RIR ranges and the recommendation order are documented product heuristics. They have not been
           prospectively validated as clinical, performance-prediction or injury-prediction thresholds.
+        </p>
+        <p className="text-[0.74rem] leading-relaxed text-muted">
+          Former project name: Personal Readiness Assistant. Previously developed as Personal Readiness Assistant
+          through V1.4.0; V1.0 prototype → V1.1 productization → V1.2 Next.js migration → V1.3 adaptive decision loop
+          → V1.4 tool-using Agent.
         </p>
       </div>
 

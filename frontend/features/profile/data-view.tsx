@@ -32,7 +32,7 @@ function summarise(raw: string, fileName: string): ImportCandidate | { error: st
   }
   const states = parsed.states ?? (parsed.state ? { [parsed.state.profile_id]: parsed.state } : null);
   if (!states || Object.keys(states).length === 0) {
-    return { error: "This file does not contain Personal Readiness data." };
+    return { error: "This file does not contain data from this app." };
   }
   const profileStates = Object.values(states);
   return {
@@ -202,7 +202,7 @@ export function DataView() {
             </div>
             <p className="flex items-start gap-2 text-[0.72rem] text-[var(--status-amber)]">
               <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
-              Importing replaces the Personal Readiness data currently stored in this browser. Export first if you want
+              Importing replaces the training data currently stored in this browser. Export first if you want
               to keep it.
             </p>
             <div className="flex gap-2">

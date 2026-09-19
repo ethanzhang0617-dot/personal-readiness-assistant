@@ -1,6 +1,11 @@
 # Project Overview
 
-**Project:** Personal Readiness Assistant
+**Project:** Agentic Sports-Science Adaptive Training Decision System
+（中文：基于运动科学与 Agent 的自适应训练决策系统）
+
+**Historical name:** Personal Readiness Assistant — previously developed as Personal Readiness Assistant
+through V1.4.0; the V1.1 sections below keep the old name because they document that release.
+
 **Version:** V1.1
 **产品定位：** 面向力量训练用户的 readiness-aware training decision assistant。
 

@@ -56,7 +56,7 @@ def preview_origin_pattern() -> str:
 
 def create_app() -> FastAPI:
     app = FastAPI(
-        title="Personal Readiness Assistant API",
+        title="Adaptive Training Decision System API",
         version=API_VERSION,
         description="Read-only adapter over the existing deterministic engines plus the Coach endpoint. "
                     "Personal facts are answered deterministically; only explanation questions may reach the "

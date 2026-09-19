@@ -14,9 +14,13 @@ export function SideNav() {
     <aside className="hidden w-60 shrink-0 border-r border-subtle bg-surface md:flex md:flex-col">
       <div className="flex h-14 items-center gap-2.5 px-5">
         <span className="flex h-7 w-7 items-center justify-center rounded-[0.6rem] bg-primary text-[0.68rem] font-bold text-primary-foreground">
-          PR
+          AT
         </span>
-        <span className="text-[0.82rem] font-semibold tracking-tight">Personal Readiness</span>
+        {/* Compact lockup: the full official title lives in About and the document metadata. */}
+        <span className="min-w-0 leading-tight">
+          <span className="block text-[0.8rem] font-semibold tracking-tight">Adaptive Training</span>
+          <span className="block text-[0.66rem] font-medium text-muted">Decision System</span>
+        </span>
       </div>
       <nav aria-label="Primary" className="flex flex-col gap-0.5 px-3 py-3">
         {NAV_ITEMS.map((item) => {

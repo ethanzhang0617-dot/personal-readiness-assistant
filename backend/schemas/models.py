@@ -21,6 +21,8 @@ class ApiModel(BaseModel):
 class HealthResponse(ApiModel):
     status: Literal["ok"] = "ok"
     service: str = "personal-readiness-assistant-api"
+    #: Human-readable project identity; ``service`` remains the technical id.
+    product_name: str | None = None
     product_version: str
     api_version: str
     frontend: str

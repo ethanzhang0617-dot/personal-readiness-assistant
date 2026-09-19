@@ -1,6 +1,34 @@
-# Personal Readiness Assistant
+# Agentic Sports-Science Adaptive Training Decision System
 
-## V1.2 release candidate — run this
+**中文：基于运动科学与 Agent 的自适应训练决策系统**
+
+A production tool-using AI training decision system that combines deterministic sports-science engines,
+personal response adaptation, and grounded DeepSeek orchestration.
+
+**Former project name:** Personal Readiness Assistant
+
+**Historical evolution:** V1.0 Prototype → V1.1 Productization → V1.2 Next.js Migration →
+V1.3 Adaptive Decision Loop → V1.4 Tool-Using Agent
+
+## CV / Portfolio Project Name
+
+**Chinese:** 基于运动科学与 Agent 的自适应训练决策系统
+
+**English:** Agentic Sports-Science Adaptive Training Decision System
+
+**Project type:** Independent Product Project
+
+**One-line positioning (中文):** 将运动科学、个体训练响应、确定性决策引擎与 Tool-Using AI Agent 结合，
+把每日状态转化为可解释、可执行的训练决策。
+
+**One-line positioning (English):** An independent product project combining sports science, adaptive
+personal response, deterministic training engines, and a tool-using AI Agent to turn daily readiness into
+grounded, actionable training decisions.
+
+## Run the current product
+
+The current product is a **Next.js frontend + FastAPI backend**. The Streamlit app described further
+down is the historical V1.1 reference implementation and is not the primary product.
 
 The current product is a **Next.js frontend + FastAPI backend**. The Streamlit app described further
 down is the V1.1 reference implementation and is not the primary product.
@@ -21,14 +49,14 @@ Open <http://localhost:3000>.
 
 | Question | Answer |
 |---|---|
-| What is it? | A readiness-aware strength-training decision assistant: how ready you are today, what to train, how hard, and why. |
+| What is it? | An agentic sports-science training decision system: how ready you are today, what to train, how hard, and why — with a tool-using AI Agent that explains the verified decision. |
 | Frontend stack | Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS 4, shadcn/ui-style primitives, pnpm. |
 | Backend stack | FastAPI adapter over the existing deterministic Python engines. Stateless. |
 | Where is my data? | Check-ins, logged sessions, profile edits and Coach history live in **this browser's IndexedDB**. The API stores nothing. |
 | Do I need an API key? | No. Without `DEEPSEEK_API_KEY` everything works and explanation questions return the deterministic answer. |
 | How do I configure the key safely? | Put `DEEPSEEK_API_KEY` in `.streamlit/secrets.toml` (gitignored) or the environment, on the **backend** only. Never in a `NEXT_PUBLIC_*` variable. |
 | Demo scenarios | Profile → Demo controls: three fixed simulated check-ins (well recovered / moderate fatigue / high load) plus the three demo profiles. |
-| Tests | `python3 -m pytest -v` (279 tests) and `cd frontend && pnpm lint && pnpm typecheck && pnpm build && pnpm check:store`. |
+| Tests | `python3 -m pytest -v` (285 tests) and `cd frontend && pnpm lint && pnpm typecheck && pnpm build && pnpm check:store`. |
 
 | Third-party notices | The Train muscle visualisation uses the MIT-licensed [MuscleMap](https://github.com/Jsplice/MuscleMap) body assets — see `docs/THIRD_PARTY_NOTICES.md`. |
 
@@ -53,9 +81,9 @@ profile context), and the deterministic engines keep decision authority. Eleven 
 strict structured planner, bounded tool steps, grounding and safety guards, and a subtle
 "Checked N verified sources" trace in the answer. See `docs/V1_4_AGENT_LAYER.md`.
 
-## V1.1 reference implementation (Streamlit)
+## V1.1 reference implementation (Streamlit) — historical
 
-**Release candidate: Personal Readiness Assistant V1.0 — Portfolio Release**
+**Release candidate: Personal Readiness Assistant V1.0 — Portfolio Release** (the project's historical name)
 
 An English-only Streamlit web prototype for two daily questions:
 
@@ -197,7 +225,7 @@ Saved readiness, check-in and training-history data remain in the browser's Inde
 
 ## Deploy to Streamlit Community Cloud
 
-This is the primary deployment path.
+This was the V1.1 deployment path; the current product deploys as the Next.js frontend + FastAPI backend above.
 
 1. Create a GitHub repository and upload this project, with `app.py` at the repository root.
 2. Commit and push to branch `main`.

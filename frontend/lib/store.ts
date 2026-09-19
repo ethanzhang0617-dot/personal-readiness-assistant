@@ -18,6 +18,8 @@ import { migrateEnvelope, STORAGE_VERSION, type StoredEnvelope } from "@/lib/sto
 export { STORAGE_VERSION };
 export type { StoredEnvelope };
 
+/** Retained technical identifier (legacy project slug). Renaming it would orphan
+ *  existing browser data, so the product-name migration deliberately keeps it. */
 const DB_NAME = "personal-readiness-assistant";
 const DB_VERSION = 1;
 const STORE_NAME = "app-state";

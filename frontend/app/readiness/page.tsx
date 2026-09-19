@@ -1,6 +1,6 @@
 import { ReadinessView } from "@/features/readiness/readiness-view";
 
-export const metadata = { title: "Readiness · Personal Readiness Assistant" };
+export const metadata = { title: "Readiness · Adaptive Training Decision System" };
 
 export default function ReadinessPage() {
   return <ReadinessView />;
