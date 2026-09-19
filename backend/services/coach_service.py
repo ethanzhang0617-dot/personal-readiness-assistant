@@ -22,6 +22,7 @@ _CONTRACT = {
     "safety": "deterministic safety routing, zero provider calls",
     "explanation": "provider allowed, then contradiction check and grounding guards",
     "fallback": "deterministic answer whenever the provider is unavailable or a draft is rejected",
+    "agent_tools": "read-only verified product tools; the model may choose which to consult and never decides training",
 }
 
 
@@ -50,6 +51,11 @@ def credential_configured() -> bool:
     return bool(ai_engine.deepseek_api_key(server_secrets()))
 
 
+def contract() -> dict[str, str]:
+    """The published deterministic-first contract, shared with the Agent layer."""
+    return dict(_CONTRACT)
+
+
 def _classify(provider: str) -> tuple[str, bool, bool]:
     if provider == ai_engine.PROVIDER_VERIFIED:
         return "verified_data", False, True
@@ -58,6 +64,15 @@ def _classify(provider: str) -> tuple[str, bool, bool]:
     if provider == ai_engine.AI_PROVIDER_LABEL:
         return "ai_explanation", True, False
     return "deterministic_fallback", False, False
+
+
+def classify_provider(provider: str) -> tuple[str, bool, bool]:
+    """Public form of the Coach response contract: (kind, ai_used, verified_data).
+
+    The V1.4 Agent layer reuses it so an Agent answer and a direct Coach answer
+    always describe themselves the same way.
+    """
+    return _classify(provider)
 
 
 def verified_answer(text: str, notice: str | None = None) -> dict[str, Any]:

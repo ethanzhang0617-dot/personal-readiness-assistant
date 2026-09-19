@@ -89,6 +89,17 @@ _SYSTEM_PROMPT = (
     "may be explained with general sports-science knowledge when the question is not about the user's own recorded data."
 )
 
+
+def system_prompt() -> str:
+    """The product's single grounding prompt.
+
+    V1.4 exposes it so the Agent layer can answer over verified tool results with
+    exactly the same grounding rules the direct Coach explanation uses, instead
+    of keeping a second, drifting copy of them.
+    """
+    return _SYSTEM_PROMPT
+
+
 _diag: dict[str, Any] = {
     "request_attempted": False,
     "response_received": False,
