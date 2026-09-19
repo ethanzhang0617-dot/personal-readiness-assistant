@@ -28,7 +28,7 @@ Open <http://localhost:3000>.
 | Do I need an API key? | No. Without `DEEPSEEK_API_KEY` everything works and explanation questions return the deterministic answer. |
 | How do I configure the key safely? | Put `DEEPSEEK_API_KEY` in `.streamlit/secrets.toml` (gitignored) or the environment, on the **backend** only. Never in a `NEXT_PUBLIC_*` variable. |
 | Demo scenarios | Profile → Demo controls: three fixed simulated check-ins (well recovered / moderate fatigue / high load) plus the three demo profiles. |
-| Tests | `python3 -m pytest -v` (246 tests) and `cd frontend && pnpm lint && pnpm typecheck && pnpm build && pnpm check:store`. |
+| Tests | `python3 -m pytest -v` (279 tests) and `cd frontend && pnpm lint && pnpm typecheck && pnpm build && pnpm check:store`. |
 
 | Third-party notices | The Train muscle visualisation uses the MIT-licensed [MuscleMap](https://github.com/Jsplice/MuscleMap) body assets — see `docs/THIRD_PARTY_NOTICES.md`. |
 
@@ -45,6 +45,13 @@ Full documentation: `docs/V1_2_DEPLOYMENT.md` (deployment and environment),
 `docs/V1_2_FUNCTIONAL_PARITY.md` (Streamlit comparison), `docs/V1_2_UI_POLISH.md` (design system),
 `docs/V1_3_ADAPTIVE_DECISION_LOOP.md` (V1.3 adaptive decision loop), `docs/CODEX_HANDOFF.md` (session handoff).
 Final V1.3 verification record: `docs/V1_3_FINAL_QA.md`.
+
+V1.4 turns the same Coach into a **tool-using adaptive training agent**: the model chooses which
+verified product tools to consult (readiness, recommendation, recent training, exposure, Personal
+Response, Recommendation Confidence, Decision Trace, Decision Explorer, calibration, Training Load,
+profile context), and the deterministic engines keep decision authority. Eleven read-only tools, a
+strict structured planner, bounded tool steps, grounding and safety guards, and a subtle
+"Checked N verified sources" trace in the answer. See `docs/V1_4_AGENT_LAYER.md`.
 
 ## V1.1 reference implementation (Streamlit)
 
@@ -130,8 +137,30 @@ question → deterministic router
              ├── personal factual  → structured fact resolver → verified answer   (no model, no API call)
              ├── correction        → verified re-check                            (no model, no API call)
              ├── safety            → safety rule                                  (no model, no API call)
-             └── explanation / general → DeepSeek (non-thinking) → guards → fallback
+             └── explanation / general → Agent orchestrator → verified tools → DeepSeek (non-thinking) → guards → fallback
 ```
+
+### V1.4 — Agent layer (`docs/V1_4_AGENT_LAYER.md`)
+
+The Coach is now a **tool-using assistant over the existing deterministic engines**. The model may
+choose *which* verified product information to consult; it never decides the training.
+
+```text
+USER → AI COACH → AGENT ORCHESTRATOR → INTENT + TOOL SELECTION → DETERMINISTIC TOOLS
+     → VERIFIED STRUCTURED RESULTS → DEEPSEEK → GROUNDED FINAL RESPONSE
+```
+
+- **Eleven read-only tools** (`agent_tools.py`) wrap capabilities that already exist: readiness, the current recommendation, recent training, weekly exposure, Personal Response, Recommendation Confidence, Decision Trace, Decision Explorer, in-session calibration, Training Load and profile/programme context. There is no write tool, no arbitrary function call, no file access and no network access through a tool.
+- **Strict structured planner**, not native tool calling (`agent_planner.py`). `GET /api/health` publishes `agent.strategy = "structured_planner"` and `native_tool_calling: false` with the reason, because the existing minimal chat-completions client declares no tool support. Unknown tool names and undeclared arguments are refused before execution; without a usable plan the Agent falls back to a deterministic plan.
+- **Deterministic first.** Safety, personal facts, corrections and out-of-scope questions are answered exactly as before with zero provider calls, so "What is my readiness today?" stays instant.
+- **Decision authority stays with the engines** (`agent_guard.py`): a draft is rejected if it invents a number, contradicts the recorded readiness, replaces the recorded session demand, or drops a safety restriction.
+- **Bounded and cheap:** `MAX_TOOL_STEPS = 4`, at most one planning call and one answer call per question, bounded tool output and a bounded conversation window.
+- **Failure never breaks the Coach:** provider, planner, tool, argument or iteration-limit failures all degrade to a deterministic answer built from the verified tool results.
+- **Transparency without chain-of-thought:** the answer shows a small collapsible *Checked N verified sources* list (Readiness, Recent training, Personal Response …). Tool trace only — no prompt, no hidden reasoning, no developer console.
+
+API: `POST /api/state/coach` is upgraded internally, and `POST /api/state/coach/agent` is the explicit
+Agent endpoint. Both add `tools_used`, `tool_trace`, `grounded`, `fallback_used` and `agent` to the
+existing Coach response contract without removing any field.
 
 - **Personal factual questions never call the provider.** "How much have I trained back this week?", "What's my training load today?" and similar questions are answered from structured facts that carry their own unit, period and source, and are labelled **VERIFIED DATA**.
 - **Explanation, discussion and general training questions** may be sent to the DeepSeek API (`deepseek-flash`, non-thinking mode) and are shown only after passing the contradiction check and the grounding guards.

@@ -13,12 +13,11 @@
 
 | 项目 | 值 |
 |---|---|
-| Branch | `v1.3-adaptive-decision-loop` |
+| Branch | `v1.4-agent-layer`（从 V1.3 HEAD `55f05d4` 创建；V1.3 分支本身未改动） |
 | 已冻结基线 | `v1.2-nextjs-migration` = `7d21568`（V1.2 RC）· `v1.1-productization` = `0c42048` · `main` = `fe09ab6` · tag 仅 `v1.0.0` |
-| V1.3 Phase 1（已推送） | `673010f` `docs: document the adaptive decision loop phase 1` |
-| V1.3 Phase 2（已推送） | `e09a88b` `docs: record adaptive loop phase 2` |
-| V1.3 最终冲刺（本地，待 push） | 见本文件所在 commit |
-| Test baseline | `python -m pytest -v` → **246 passed**（`test_app.py` 139 · `test_adaptive.py` 31 · `test_api.py` 39 · `test_calibration.py` 37） |
+| V1.3 Phase 1 / Phase 2 / 最终冲刺 | `673010f` · `e09a88b` · `55f05d4`（全部在 `v1.3-adaptive-decision-loop` 上） |
+| V1.4 Agent layer | `v1.4-agent-layer`：Agent orchestrator · tool registry · structured planner · grounding/safety guards |
+| Test baseline | `python -m pytest -v` → **279 passed**（V1.3 基线 246 + `test_agent.py` 33） |
 | Compile | `python -m compileall .` → PASS |
 | GitHub remote (`origin`) | `https://github.com/ethanzhang0617-dot/personal-readiness-assistant.git` |
 | Tags | 仅 `v1.0.0`（V1.1 未打 tag、未发 Release） |
@@ -124,6 +123,33 @@ Decision Trace **不是** LLM chain-of-thought，也不是 debug log；它是产
   （旧键 `DISABLE_EMBEDDED_LLM` 仍被接受，向后兼容）。
 * 只有在 Coach 真正需要生成解释时才构造 provider 并发起请求；Today / Train / Check-in / Trends / More
   不创建 AI client、不调用 API。Personal factual query 即使在 Coach 内也不调用。
+
+# AI Coach V1.4 — Agent layer
+
+Coach 从「grounded explanation interface」升级为「tool-using agentic training assistant」。
+**复用** 既有 DeepSeek provider 与既有确定性引擎，没有第二个模型、没有第二个 provider。
+
+* `agent_tools.py` — **11 个只读工具白名单**，每个都是既有能力的 wrapper：
+  `get_readiness` · `get_current_recommendation` · `get_recent_training` · `get_training_exposure` ·
+  `get_personal_response` · `get_recommendation_confidence` · `get_decision_trace` ·
+  `run_decision_explorer` · `get_session_calibration_context` · `get_training_load` · `get_personal_context`。
+  每个工具声明 name / description / typed input schema / typed output schema / operation / source / error behaviour。
+  非白名单工具名、未声明参数、越界或类型错误全部在执行前拒绝；没有任何 write 工具。
+* `agent_planner.py` — **strict structured planner**（不是 native function calling）。
+  `/api/health` → `agent.strategy = "structured_planner"`、`native_tool_calling: false`（附理由）。
+  planner 输出只接受严格 JSON，`MAX_TOOLS_PER_PLAN = 5`；plan 不可用时走确定性 plan。
+* `agent_orchestrator.py` — 路由 → 规划 → 并行执行工具 → 结构化 context → DeepSeek 措辞 → 校验。
+  `MAX_TOOL_STEPS = 4`；一次提问最多 1 次 planning + 1 次回答调用；简单事实走 fast path（0 次调用、0 步）。
+* `agent_context.py` — 结构化 Agent Context（readiness / recommendation / exposure / load / soreness /
+  Personal Response / Recommendation Confidence / calibration / profile）与**保守 memory**
+  （只保存产品已有历史：sessions、check-ins、response episodes、calibration、adaptation events；无模型自写记忆、无人格或健康推断）。
+* `agent_guard.py` — 数字只能来自已验证 facts 或本轮工具结果；不得改变 readiness、session demand、
+  safety 分类；safety 优先级永远最高（safety 问题根本不进模型）。
+* API：`POST /api/state/coach` 内部升级，新增 `POST /api/state/coach/agent`；响应新增
+  `tools_used` / `tool_trace` / `grounded` / `fallback_used` / `agent`，**不删除任何既有字段**。
+* UI：回答下方一个可折叠的 **“Checked N verified sources”** 列表（Readiness / Today's session / …），
+  只展示 tool trace，不展示 prompt 或 chain-of-thought；Coach IA 保持不变。
+* 详见 `docs/V1_4_AGENT_LAYER.md`。
 
 # AI Provider（V1.1 DeepSeek migration）
 
