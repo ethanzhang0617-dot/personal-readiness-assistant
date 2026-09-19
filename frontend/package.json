@@ -1,6 +1,6 @@
 {
   "name": "personal-readiness-assistant-web",
-  "version": "1.4.0",
+  "version": "1.4.2",
   "private": true,
   "description": "Mobile-first Next.js client for the existing Python engines; V1.4 adds the Agent-layer tool trace.",
   "scripts": {
