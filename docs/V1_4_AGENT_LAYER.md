@@ -307,6 +307,54 @@ Frontend verification: `tsc --noEmit`, `eslint .`, `next build` and
 `scripts/check-store-migration.mjs` (17/17) all pass; the Coach screen was
 rendered at 390×844 and 1440×900 in both light and dark appearance with no
 horizontal overflow, no navigation collision and no literal Markdown artifacts.
+The captured acceptance evidence lives in `docs/evidence/v1.4-agent/` and is
+documented in `docs/V1_4_AGENT_UI_ACCEPTANCE.md`.
+
+**Live-provider observation (2026-09-19, `deepseek-flash`).** Across five live
+drafts of the mandatory question, three were accepted and two were rejected by
+the existing V1.3 rule that an explanation of the user's own plan must name the
+recorded primary recommendation (`ai_engine.validate_llm_response`). The
+rejections were correct behaviour — the wording omitted the session name — and
+the product answered from the verified deterministic result instead. This is a
+wording-quality issue in the provider prompt, not a defect in the Agent layer;
+the release report records it as a known observation for the next prompt review.
+
+### 11.1 Real provider smoke test (manual)
+
+The automated suite **mocks** the provider on purpose: no test may spend a real
+API call, and the normal test count must stay reproducible offline. The live
+provider is validated separately, by hand:
+
+```bash
+DEEPSEEK_API_KEY=... python3 scripts/smoke_agent_deepseek.py          # one case
+DEEPSEEK_API_KEY=... python3 scripts/smoke_agent_deepseek.py --all     # + what-if case
+```
+
+`--attempts N` (default 2) exists because provider wording is stochastic and the
+existing V1.3 grounding guard rejects a draft that does not identify the recorded
+primary recommendation. When a draft is rejected the product shows the verified
+deterministic answer — a correct, documented outcome that says nothing about
+whether the provider worked. The script therefore retries the case, prints every
+attempt and the retry explicitly, and only reports PASS once a live draft passed
+the guards. The flakiness stays visible; it is never hidden.
+
+`scripts/smoke_agent_deepseek.py` reads the project's existing configuration
+(`.streamlit/secrets.toml`, then `DEEPSEEK_API_KEY`) - no new secret name is
+introduced - and runs the real V1.4 stack end to end: structured planner →
+read-only tools → grounded synthesis → guards. It asserts that the provider was
+actually called, that the strategy is `structured_planner`, that at least two
+verified tools were used, that the answer is grounded, non-empty and not a
+fallback, and that no tool name or argument set was rejected. It prints only
+public metadata (provider, strategy, tool names, grounding, fallback, latency)
+and a redacted answer preview; it never prints the key, the Authorization header,
+the system prompt or any chain-of-thought.
+
+Behaviour without a credential: it prints `SKIPPED - DEEPSEEK_API_KEY not
+configured` and exits `0`, so it can never fail a build. `--strict` exits `3`
+instead when a hard failure is wanted. The script is never invoked by pytest, the
+frontend build, a Vercel build, a Render build or CI: nothing imports it and
+nothing calls it automatically. Its result is evidence, not part of the 279-test
+count.
 
 ---
 

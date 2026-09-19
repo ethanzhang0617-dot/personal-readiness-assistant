@@ -158,6 +158,15 @@ USER → AI COACH → AGENT ORCHESTRATOR → INTENT + TOOL SELECTION → DETERMI
 - **Failure never breaks the Coach:** provider, planner, tool, argument or iteration-limit failures all degrade to a deterministic answer built from the verified tool results.
 - **Transparency without chain-of-thought:** the answer shows a small collapsible *Checked N verified sources* list (Readiness, Recent training, Personal Response …). Tool trace only — no prompt, no hidden reasoning, no developer console.
 
+**Real provider smoke test (manual, never automatic).** `python3 scripts/smoke_agent_deepseek.py` runs the
+real configured DeepSeek provider through the real Agent stack (planner → tools → grounded answer → guards)
+and asserts strategy, tool use, grounding and latency. Automated tests stay mocked; the script reads the
+existing `.streamlit/secrets.toml` / `DEEPSEEK_API_KEY`, needs no new secret name, prints no key and no
+chain-of-thought, and exits as `SKIPPED` when no credential is configured. Add `--all` for the second
+(what-if / Decision Explorer) case, `--attempts N` to control retries (provider wording is stochastic
+and an existing grounding guard may reject a draft, in which case the verified deterministic answer is
+shown), `--strict` to fail hard without a credential.
+
 API: `POST /api/state/coach` is upgraded internally, and `POST /api/state/coach/agent` is the explicit
 Agent endpoint. Both add `tools_used`, `tool_trace`, `grounded`, `fallback_used` and `agent` to the
 existing Coach response contract without removing any field.
