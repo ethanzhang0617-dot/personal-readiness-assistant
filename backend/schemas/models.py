@@ -29,6 +29,8 @@ class HealthResponse(ApiModel):
     ai_explanations_enabled: bool
     ai_credential_configured: bool
     engines: list[str]
+    #: V1.4 — what the Agent layer is and is not: strategy, tool whitelist.
+    agent: dict[str, Any] | None = None
 
 
 class ProfileSummary(ApiModel):
@@ -208,6 +210,29 @@ class CoachMessageRequest(ApiModel):
     history: list[CoachTurn] = Field(default_factory=list)
 
 
+class CoachToolTrace(ApiModel):
+    """One verified source a Coach answer used. A tool trace, never a reasoning trace."""
+
+    tool: str
+    label: str
+    source: str
+    operation: str = "read_only"
+
+
+class CoachAgentMeta(ApiModel):
+    """Agent-layer metadata. No prompt, no chain-of-thought, no secret."""
+
+    strategy: str
+    intent: str | None = None
+    plan_source: str | None = None
+    steps: int = 0
+    rejected: list[dict[str, Any]] = Field(default_factory=list)
+    planner_error: str | None = None
+    limit_reached: bool = False
+    provider_seconds: float | None = None
+    planner: dict[str, Any] | None = None
+
+
 class CoachMessageResponse(ApiModel):
     answer: str
     provider: str
@@ -216,6 +241,13 @@ class CoachMessageResponse(ApiModel):
     verified_data: bool
     notice: str | None = None
     contract: dict[str, str]
+    # V1.4 — additive Agent fields. Older clients keep working: the previous
+    # five fields are unchanged, and these all have defaults.
+    tools_used: list[str] = Field(default_factory=list)
+    tool_trace: list[CoachToolTrace] = Field(default_factory=list)
+    grounded: bool = True
+    fallback_used: bool = False
+    agent: CoachAgentMeta | None = None
 
 
 class ScienceReference(ApiModel):

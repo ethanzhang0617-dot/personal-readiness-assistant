@@ -11,6 +11,8 @@ from typing import Any, Mapping
 
 import session_calibration
 import ai_engine
+import agent_planner
+import agent_tools
 import decision_explorer
 from fastapi import APIRouter, HTTPException, Query
 from training_recommendation_engine import prescription_log_defaults
@@ -52,15 +54,16 @@ from backend.schemas.models import (
     WhatIfResponse,
     WeeklyExposure,
 )
-from backend.services import (calibration_service, coach_service, demo_service, explorer_service, insights_service,
-                              readiness_service, response_service, science_service, state_service, training_service)
+from backend.services import (agent_service, calibration_service, coach_service, demo_service, explorer_service,
+                              insights_service, readiness_service, response_service, science_service, state_service,
+                              training_service)
 
 router = APIRouter(prefix="/api")
 
 #: Public service metadata. The Streamlit build is a historical prototype and is
 #: deliberately not described here as the current implementation.
-PRODUCT_VERSION = "1.3"
-API_VERSION = "1.3"
+PRODUCT_VERSION = "1.4"
+API_VERSION = "1.4"
 FRONTEND_STACK = "Next.js"
 BACKEND_STACK = "FastAPI"
 ENGINES = [
@@ -69,6 +72,8 @@ ENGINES = [
     "training_recommendation_engine.weekly_training_exposure",
     "ai_facts.build_personal_facts",
     "ai_engine.get_ai_response",
+    "agent_orchestrator.run",
+    "agent_tools.execute",
 ]
 
 
@@ -206,6 +211,11 @@ def health() -> dict[str, Any]:
         "ai_explanations_enabled": ai_engine.ai_coach_enabled(secrets),
         "ai_credential_configured": coach_service.credential_configured(),
         "engines": ENGINES,
+        # What the Agent layer actually does, published instead of assumed.
+        "agent": {
+            **agent_planner.capability_report(),
+            "tools": list(agent_tools.tool_names()),
+        },
     }
 
 
@@ -284,7 +294,7 @@ def check_in(payload: CheckInRequest) -> dict[str, Any]:
 def coach_message(payload: CoachMessageRequest) -> dict[str, Any]:
     profile, assessment, rec = _context(payload.profile_id)
     history = [{"role": turn.role, "content": turn.content} for turn in payload.history]
-    return coach_service.answer(payload.question, profile, assessment, rec, history)
+    return agent_service.answer(payload.question, profile, assessment, rec, history=history)
 
 
 # --------------------------------------------------------------------------- #
@@ -402,23 +412,40 @@ def state_session(payload: SessionLogRequest) -> dict[str, Any]:
 
 @router.post("/state/coach", response_model=CoachMessageResponse)
 def state_coach(payload: CoachStateRequest) -> dict[str, Any]:
+    return _state_coach(payload)
+
+
+@router.post("/state/coach/agent", response_model=CoachMessageResponse)
+def state_coach_agent(payload: CoachStateRequest) -> dict[str, Any]:
+    """The explicit V1.4 Agent endpoint. Same contract, same deterministic-first routing."""
+    return _state_coach(payload)
+
+
+def _state_coach(payload: CoachStateRequest) -> dict[str, Any]:
+    """Coach routing over the client-owned state.
+
+    Order is unchanged from V1.3: recorded calibration first, then recorded
+    Personal Response, then the Agent layer. The first two remain deterministic
+    and make zero provider calls; only the remaining routes can use tools.
+    """
     profile, assessment, rec, _ = _state_context(payload.state)
     # In-session calibration facts are answered from the recorded checkpoint.
     calibration_answer = calibration_service.answer_question(payload.state, payload.question)
     if calibration_answer:
-        return coach_service.verified_answer(
-            calibration_answer, "Answered from your recorded data. No model wording was used.")
+        return agent_service.verified_answer(
+            calibration_answer, "Answered from your recorded data. No model wording was used.",
+            tools_used=["get_session_calibration_context"], intent="in_session_guidance")
     # Personal Response facts are answered deterministically, so they never reach
     # the AI provider (the AI-01 grounding contract).
-    deterministic = response_service.answer_question(
-        payload.question,
-        _response_decision(profile, assessment, rec),
-        payload.state.adaptation_log,
-    )
+    decision = _response_decision(profile, assessment, rec)
+    deterministic = response_service.answer_question(payload.question, decision, payload.state.adaptation_log)
     if deterministic:
-        return coach_service.verified_answer(deterministic, "Answered from your recorded data. No model wording was used.")
+        return agent_service.verified_answer(
+            deterministic, "Answered from your recorded data. No model wording was used.",
+            tools_used=agent_service.personal_response_tools(payload.question), intent="response_history")
     history = [{"role": turn.role, "content": turn.content} for turn in payload.history]
-    return coach_service.answer(payload.question, profile, assessment, rec, history)
+    return agent_service.answer(payload.question, profile, assessment, rec, decision=decision,
+                                state=payload.state, history=history)
 
 
 @router.post("/state/feedback", response_model=StateEnvelope)

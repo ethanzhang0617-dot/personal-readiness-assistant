@@ -191,7 +191,16 @@ def answer_question(question: str, decision: Mapping[str, Any],
     mentions_demand = any(word in text for word in ("high-demand", "high demand", "hard session", "hard sessions",
                                                     "moderate-demand", "moderate demand", "low-demand", "low demand"))
     if mentions_demand and any(word in text for word in completion_words):
-        band = "High" if "high" in text else "Moderate" if "moderate" in text else "Low"
+        # "Hard session(s)" is the athlete's own wording for the High band; a
+        # question that never names a band must not be answered as Low demand.
+        if "high" in text or "hard" in text:
+            band = "High"
+        elif "moderate" in text:
+            band = "Moderate"
+        elif "low" in text:
+            band = "Low"
+        else:
+            return None
         row = bands.get(band)
         if not row or row["observations"] == 0:
             return (f"I don't have enough recorded {band.lower()}-demand sessions yet. Personal Response needs a "

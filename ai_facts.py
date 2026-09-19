@@ -415,6 +415,16 @@ GENERAL_PATTERNS = (
 
 SCOPE_TERMS = ("capital of", "weather", "stock price", "who won", "translate", "write me a poem")
 
+#: Advice and counterfactual questions are multi-source by nature: they ask what
+#: to do next, or what would change, rather than asking for one recorded value.
+#: They are routed to the explanation path (V1.4: the Agent layer) even when the
+#: wording also mentions a metric or a muscle group, because a single fact is not
+#: an answer to them.
+ADVICE_PATTERNS = (
+    r"\bwhat should i do\b", r"\bwhat do i do\b", r"\bwhat would change\b", r"\bwhat changes\b",
+    r"\bwhat would happen\b", r"\bwhat if\b", r"\bstill want to train\b", r"\bi want to train\b",
+)
+
 
 @dataclass(frozen=True)
 class Route:
@@ -512,6 +522,10 @@ def route_question(question: str, history: Iterable[Mapping[str, str]] = (), fac
         return Route("CORRECTION", previous_question=_previous_question(history), matched=("correction",))
     if any(term in q for term in SCOPE_TERMS):
         return Route("SCOPE", matched=("out-of-scope",))
+
+    if any(re.search(pattern, q) for pattern in ADVICE_PATTERNS):
+        groups, note = muscle_groups_from_text(q)
+        return Route("EXPLANATION", groups=groups, note=note, matched=("advice",))
 
     metric, groups, note = _fact_metric(question)
     if metric:
