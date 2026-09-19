@@ -98,7 +98,8 @@ def _demo_turn():
 
 
 def _run_case(question: str, secrets: dict, show_answer: bool,
-              attempt: int = 1, total_attempts: int = 1) -> tuple[bool, dict]:
+              attempt: int = 1, total_attempts: int = 1,
+              verbose: bool = True) -> tuple[bool, dict, dict[str, object]]:
     state, profile, assessment, recommendation, decision = _demo_turn()
     provider = CountingProvider(ai_engine.DeepSeekCoachProvider(
         api_key=ai_engine.deepseek_api_key(secrets),
@@ -124,20 +125,42 @@ def _run_case(question: str, secrets: dict, show_answer: bool,
     rejected = [row for row in (agent.get("rejected") or [])]
     answer = str(result.get("answer") or "")
 
-    print(f"QUESTION: {question}")
-    print(f"ATTEMPT: {attempt}/{total_attempts}")
-    print(f"PROVIDER: {result.get('provider')}")
-    print(f"STRATEGY: {agent.get('strategy')}   (plan source: {agent.get('plan_source')})")
-    print("TOOLS USED:")
-    for name in tools:
-        print(f"- {name}")
-    print(f"Grounded: {str(bool(result.get('grounded'))).lower()}")
-    print(f"Fallback: {str(bool(result.get('fallback_used'))).lower()}")
-    print(f"Provider calls: {provider.calls}   Agent latency: {elapsed:.2f}s   "
-          f"Provider time: {agent.get('provider_seconds')}")
-    print(f"Answer received: {'yes' if answer else 'no'}")
-    print(f"Answer preview: {_clean(answer[:200]) if not show_answer else _clean(answer)}")
-    print(f"Rejected tools: {rejected or 'none'}")
+    summary = {
+        "question": question,
+        "attempt": attempt,
+        "planner": agent.get("plan_source") == "planner",
+        "strategy": agent.get("strategy"),
+        "tools": list(tools),
+        "grounded": bool(result.get("grounded")),
+        "fallback": bool(result.get("fallback_used")),
+        "guard_rejected": result.get("notice") == ai_engine.AI_REJECTED_NOTICE,
+        "provider_error": result.get("notice") == ai_engine.AI_UNAVAILABLE_NOTICE,
+        "provider_calls": provider.calls,
+        "latency": round(elapsed, 2),
+        "provider_seconds": agent.get("provider_seconds"),
+    }
+
+    if verbose:
+        print(f"QUESTION: {question}")
+        print(f"ATTEMPT: {attempt}/{total_attempts}")
+        print(f"PROVIDER: {result.get('provider')}")
+        print(f"STRATEGY: {agent.get('strategy')}   (plan source: {agent.get('plan_source')})")
+        print("TOOLS USED:")
+        for name in tools:
+            print(f"- {name}")
+        print(f"Grounded: {str(bool(result.get('grounded'))).lower()}")
+        print(f"Fallback: {str(bool(result.get('fallback_used'))).lower()}")
+        print(f"Provider calls: {provider.calls}   Agent latency: {elapsed:.2f}s   "
+              f"Provider time: {agent.get('provider_seconds')}")
+        print(f"Answer received: {'yes' if answer else 'no'}")
+        print(f"Answer preview: {_clean(answer[:200]) if not show_answer else _clean(answer)}")
+        print(f"Rejected tools: {rejected or 'none'}")
+    else:
+        print(f"run {attempt}: planner={'ok' if summary['planner'] else 'no'} "
+              f"tools={len(tools)} grounded={str(summary['grounded']).lower()} "
+              f"fallback={str(summary['fallback']).lower()} "
+              f"guard_rejected={str(summary['guard_rejected']).lower()} "
+              f"latency={elapsed:.2f}s provider={agent.get('provider_seconds')}")
 
     failures: list[str] = []
     if provider.calls < 1:
@@ -157,14 +180,16 @@ def _run_case(question: str, secrets: dict, show_answer: bool,
     if any(str(row.get("reason", "")).split(":")[0] in {"unknown_tool", "invalid_arguments"} for row in rejected):
         failures.append(f"a tool name or argument set was rejected: {rejected}")
 
-    if failures and result.get("notice") == ai_engine.AI_REJECTED_NOTICE:
+    if failures and summary["guard_rejected"]:
         # A guard rejection is a legitimate product outcome: the draft was not
         # shown and the verified deterministic answer was used instead. It says
         # nothing about whether the provider itself worked.
         print("NOTE: the live draft was rejected by a grounding / safety / decision-authority guard, "
               "so the verified deterministic answer was shown. This is the documented fallback path.")
-    print(f"CASE RESULT: {'PASS' if not failures else 'FAIL - ' + '; '.join(failures)}")
-    return (not failures), result
+    if verbose:
+        print(f"CASE RESULT: {'PASS' if not failures else 'FAIL - ' + '; '.join(failures)}")
+    summary["failures"] = failures
+    return (not failures), result, summary
 
 
 def main() -> int:
@@ -173,6 +198,9 @@ def main() -> int:
     parser.add_argument("--attempts", type=int, default=2,
                         help="attempts per case (default 2: the provider wording is stochastic and a grounding "
                              "guard may reject a draft, which the product answers deterministically)")
+    parser.add_argument("--stability", type=int, default=0, metavar="N",
+                        help="run the mandatory question N times without retrying and report the guard-rejection "
+                             "rate (use this to measure prompt stability before a production promotion)")
     parser.add_argument("--strict", action="store_true", help="exit non-zero when no credential is configured")
     parser.add_argument("--show-answer", action="store_true", help="print the full answer")
     args = parser.parse_args()
@@ -196,12 +224,36 @@ def main() -> int:
     cases = [PRIMARY_QUESTION] + ([SECOND_QUESTION] if args.all else [])
     results = []
     attempt_report: list[dict] = []
+    stability_rejections = 0
+    stability_runs = 0
+
+    if args.stability > 0:
+        runs = max(1, min(int(args.stability), 10))
+        print("-" * 68)
+        print(f"STABILITY RUN - {runs} independent attempts, no retry")
+        summaries: list[dict] = []
+        for index in range(1, runs + 1):
+            passed, result, summary = _run_case(PRIMARY_QUESTION, secrets, args.show_answer, index, runs,
+                                                verbose=False)
+            summaries.append(summary)
+            results.append((PRIMARY_QUESTION, passed, result))
+        rejected = [row for row in summaries if row["guard_rejected"]]
+        grounded = [row for row in summaries if row["grounded"]]
+        latencies = [float(row["latency"]) for row in summaries]
+        stability_rejections = len(rejected)
+        stability_runs = runs
+        print(f"Guard rejections: {len(rejected)}/{runs}   Grounded: {len(grounded)}/{runs}   "
+              f"Latency: min {min(latencies):.2f}s / max {max(latencies):.2f}s")
+        print("STABILITY RESULT: " + ("PASS" if len(rejected) <= 1 else "FAIL - review the prompt before promoting"))
+        # The mandatory question was measured above; only run the optional case here.
+        cases = [SECOND_QUESTION] if args.all else []
+
     for question in cases:
         passed, result = False, {}
         used = 0
         for attempt in range(1, attempts_allowed + 1):
             print("-" * 68)
-            passed, result = _run_case(question, secrets, args.show_answer, attempt, attempts_allowed)
+            passed, result, _summary = _run_case(question, secrets, args.show_answer, attempt, attempts_allowed)
             used = attempt
             if passed:
                 break
@@ -210,6 +262,8 @@ def main() -> int:
         print("")
 
     passed = all(ok for _question, ok, _result in results)
+    if stability_runs:
+        passed = passed and stability_rejections <= 1
     retried = [row for row in attempt_report if row["attempts"] > 1]
     if retried:
         print("Guard-rejected drafts that were retried (the product showed the verified answer on the "
@@ -228,6 +282,9 @@ def main() -> int:
     print(f"Strategy: {agent_planner.PLANNER_STRATEGY}")
     print(f"Grounded: {all(bool(r.get('grounded')) for _q, _o, r in results)}")
     print(f"Fallback used: {any(bool(r.get('fallback_used')) for _q, _o, r in results)}")
+    if stability_runs:
+        print(f"Guard rejection rate: {stability_rejections}/{stability_runs} "
+              f"(previous observed baseline: 2/5)")
     print(f"Secret exposed: NO")
     print(f"RESULT: {'PASS' if passed else 'FAIL'}")
     return 0 if passed else 1

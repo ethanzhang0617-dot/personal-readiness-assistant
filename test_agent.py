@@ -577,6 +577,76 @@ def test_scenario_f_simple_readiness_question_avoids_agent_overhead(client: Test
 # --------------------------------------------------------------------------- #
 
 
+def _answer_prompt() -> tuple[dict, dict, dict, dict, list[dict]]:
+    """Build the real final-answer prompt for the demo profile."""
+    profile, assessment, recommendation, decision = _demo_context()
+    state = state_service.UserState(**state_service.base_state("demo-ethan")[1])
+    context = agent_context.build_agent_context(profile, assessment, recommendation, decision, state)
+    digest = agent_context.context_digest(context)
+    tool_context = agent_tools.AgentToolContext(profile, assessment, recommendation, decision, state)
+    results = [agent_tools.execute(name, {}, tool_context)
+               for name in ("get_readiness", "get_current_recommendation", "get_personal_response")]
+    messages = agent_orchestrator.build_answer_messages(
+        "Why is today's recommendation lighter than usual?", [], digest, results)
+    return profile, assessment, recommendation, decision, messages
+
+
+def test_final_answer_prompt_requires_the_recorded_recommendation_anchor() -> None:
+    profile, assessment, recommendation, decision, messages = _answer_prompt()
+    instruction = messages[0]["content"]
+    payload = messages[-1]["content"]
+
+    # The instruction layer states the contract the validators actually enforce.
+    folded = instruction.casefold()
+    for required in ("recorded primary session", "recorded session demand", "copied exactly",
+                     "never name a different session", "HOLD, EASE or OPTIONAL PUSH",
+                     "two to five short sentences", "never present the hypothetical result as",
+                     "do not mention tool names"):
+        assert required.casefold() in folded, required
+    assert folded.count("recorded") >= 3
+
+    # The verified values needed to satisfy it are present in the same turn.
+    engine_summary = training_service.summary(recommendation)
+    assert engine_summary["primary_name"] in payload
+    assert str(decision["final_demand"]) in payload
+
+
+def test_final_answer_prompt_never_hardcodes_demo_values() -> None:
+    _profile, _assessment, recommendation, _decision, messages = _answer_prompt()
+    instruction = messages[0]["content"]
+    primary = training_service.summary(recommendation)["primary_name"]
+    assert primary not in instruction, "the instruction must take values from tool results, not hardcode them"
+    assert "Back + Biceps" not in instruction
+
+
+def test_prompt_contract_matches_the_real_grounding_validators() -> None:
+    """The anchor requirement exists because the deterministic validator enforces it."""
+    profile, assessment, recommendation, decision = _demo_context()
+    primary = training_service.summary(recommendation)["primary_name"]
+    question = "Why is today's recommendation lighter than usual?"
+
+    without_anchor = "Today's session demand is unchanged because readiness is GREEN and recent training supports it."
+    accepted, reason = ai_engine.validate_llm_response(
+        without_anchor, str(assessment["overall_readiness"]), primary, question, recommendation)
+    assert accepted is False
+    assert "did not identify the recorded primary recommendation" in reason
+
+    with_anchor = (f"Today's recorded recommendation is {primary} at {decision['final_demand']} demand. "
+                   "Readiness is GREEN and recent training support that plan.")
+    accepted, _ = ai_engine.validate_llm_response(
+        with_anchor, str(assessment["overall_readiness"]), primary, question, recommendation)
+    assert accepted is True
+
+
+def test_prompt_contract_covers_what_if_and_personal_response_rules() -> None:
+    _profile, _assessment, _recommendation, _decision, messages = _answer_prompt()
+    instruction = messages[0]["content"]
+    assert "current verified recommendation" in instruction
+    assert "single changed input" in instruction
+    assert "alternative result the explorer returned" in instruction
+    assert "recorded pattern" in instruction
+
+
 def test_agent_context_and_memory_are_structured_and_evidence_backed() -> None:
     profile, assessment, recommendation, decision = _demo_context()
     state = state_service.UserState(**state_service.base_state("demo-ethan")[1])
