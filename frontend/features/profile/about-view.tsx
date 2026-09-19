@@ -13,6 +13,26 @@ const FLOW = [
   { step: "06", title: "Training log", body: "Explicit completed-session record" },
 ];
 
+// Consumer-level view of the tool-using Agent. The step names are the product's
+// own vocabulary; nothing here exposes planner output or hidden reasoning.
+const AGENT_STEPS = [
+  { title: "Your question", body: "Readiness, today's session, training history or how to adapt" },
+  { title: "Agent planner", body: "Decides which verified information the answer needs" },
+  { title: "Verified training tools", body: "Read-only capabilities inside the product" },
+  { title: "Deterministic results", body: "The engines produce the numbers and the decision" },
+  { title: "DeepSeek explanation", body: "Turns the verified results into plain language" },
+  { title: "Grounded answer", body: "Shown with the sources that were actually checked" },
+];
+
+const AGENT_TOOL_GROUPS = [
+  { group: "Readiness", tools: "Readiness · Training Load" },
+  { group: "Today's session", tools: "Recommendation · Decision Trace" },
+  { group: "Recent training", tools: "Recent Training · Weekly Exposure" },
+  { group: "Personal response", tools: "Personal Response · Recommendation Confidence" },
+  { group: "Adaptation", tools: "Decision Explorer · In-session Calibration" },
+  { group: "Context", tools: "Profile & programme" },
+];
+
 export function AboutView() {
   return (
     <div className="space-y-5">
@@ -65,6 +85,38 @@ export function AboutView() {
             </li>
           ))}
         </ol>
+      </Section>
+
+      <Section title="How the Agent works">
+        <p className="text-[0.9rem] font-medium">
+          The Agent decides what to check. The deterministic engines decide how you train.
+        </p>
+        <ol className="mt-3 space-y-2">
+          {AGENT_STEPS.map((item, index) => (
+            <li key={item.title} className="flex gap-3">
+              <span className="text-[0.68rem] font-semibold tabular-nums text-muted">
+                {String(index + 1).padStart(2, "0")}
+              </span>
+              <span className="min-w-0">
+                <span className="block text-[0.84rem] font-medium">{item.title}</span>
+                <span className="block text-[0.74rem] text-muted">{item.body}</span>
+              </span>
+            </li>
+          ))}
+        </ol>
+        <dl className="mt-4 grid gap-2 text-[0.74rem] sm:grid-cols-2">
+          {AGENT_TOOL_GROUPS.map((item) => (
+            <div key={item.group}>
+              <dt className="font-medium">{item.group}</dt>
+              <dd className="text-muted">{item.tools}</dd>
+            </div>
+          ))}
+        </dl>
+        <p className="mt-4 text-[0.78rem] leading-relaxed text-muted">
+          DeepSeek orchestrates verified training context and explains the result, but does not independently override
+          readiness, recommendation, calibration or safety decisions. Every answer shows which verified sources were
+          checked; hidden reasoning is never exposed.
+        </p>
       </Section>
 
       <Section title="How this build is put together">

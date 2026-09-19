@@ -5,8 +5,10 @@ import { ArrowUp, ChevronRight, CircleAlert, ShieldCheck } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { PageHeader } from "@/components/page-header";
+import { AgentRunSummary } from "@/components/agent-run-summary";
 import { RichText } from "@/components/ui/rich-text";
 import { Skeleton } from "@/components/ui/skeleton";
+import { deriveAgentRun } from "@/lib/agent-sources";
 import { COACH_MENUS, PRIMARY_QUESTIONS } from "@/lib/coach-questions";
 import { useUserState } from "@/lib/state-provider";
 import type { CoachKind } from "@/types/api";
@@ -50,7 +52,11 @@ export function CoachView() {
 
   return (
     <div className="mx-auto flex min-h-[calc(100dvh-9rem)] w-full flex-col gap-5 md:max-w-[42rem]">
-      <PageHeader eyebrow="AI Coach" title="Ask Coach" description="About today's session, your readiness or your recorded training." />
+      <PageHeader
+        eyebrow="AI Coach"
+        title="Tool-Using Training Agent"
+        description="Plans what to check, uses verified training tools, then explains the result."
+      />
 
       <div className="flex-1 space-y-6">
         {chat.length === 0 ? (
@@ -104,53 +110,29 @@ export function CoachView() {
                   </div>
                 );
               }
+              const run = deriveAgentRun({
+                kind: message.kind,
+                grounded: message.grounded,
+                toolTrace: message.tools,
+              });
               return (
                 <article key={message.id} className="space-y-1.5">
-                  <p
-                    className={cn(
-                      "text-[0.72rem] font-semibold",
-                      provenance?.verified ? "text-[var(--status-green)]" : "text-muted",
-                    )}
-                  >
-                    {provenance?.verified ? "✓ " : ""}
-                    {provenance?.label ?? "Answer"}
-                  </p>
+                  {run ? null : (
+                    <p
+                      className={cn(
+                        "text-[0.72rem] font-semibold",
+                        provenance?.verified ? "text-[var(--status-green)]" : "text-muted",
+                      )}
+                    >
+                      {provenance?.verified ? "✓ " : ""}
+                      {provenance?.label ?? "Answer"}
+                    </p>
+                  )}
                   <RichText text={message.content} />
-                  {/* Tool trace, not reasoning trace: which verified sources were
-                      checked. Subtle, collapsed by default, product language only. */}
-                  {message.tools && message.tools.length > 0 ? (
-                    <details className="group">
-                      <summary className="flex min-h-9 cursor-pointer list-none items-center gap-1 text-[0.74rem] font-medium text-muted">
-                        Checked {message.tools.length} verified source{message.tools.length === 1 ? "" : "s"}
-                        <span className="transition-transform group-open:rotate-90" aria-hidden>
-                          ›
-                        </span>
-                      </summary>
-                      <ul className="mt-1 space-y-0.5 pl-3">
-                        {message.tools.map((tool) => (
-                          <li key={tool.tool} className="text-[0.72rem] leading-relaxed text-muted">
-                            • {tool.label}
-                          </li>
-                        ))}
-                      </ul>
-                    </details>
-                  ) : null}
-                  {message.kind === "ai_explanation" ? (
-                    <details className="group">
-                      <summary className="flex min-h-9 cursor-pointer list-none items-center gap-1 text-[0.74rem] font-medium text-muted">
-                        See reasoning →
-                        <span className="transition-transform group-open:rotate-90" aria-hidden>
-                          ›
-                        </span>
-                      </summary>
-                      <p className="mt-1.5 text-[0.74rem] leading-relaxed text-muted">
-                        This wording is generated from your verified structured facts. The recommendation and every
-                        personal number come from the deterministic decision system, not from the model.
-                      </p>
-                      {message.notice ? (
-                        <p className="mt-1 text-[0.74rem] leading-relaxed text-muted">{message.notice}</p>
-                      ) : null}
-                    </details>
+                  {/* Agent execution surface: real sources only, from the response
+                      metadata. A tool trace, never a reasoning trace. */}
+                  {run ? (
+                    <AgentRunSummary run={run} notice={message.notice} />
                   ) : message.notice ? (
                     <p className="flex items-start gap-1.5 text-[0.72rem] leading-relaxed text-muted">
                       <CircleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
@@ -205,7 +187,12 @@ export function CoachView() {
 
         {busy && chat[chat.length - 1]?.role === "user" ? (
           <div className="space-y-2">
-            <p className="text-[0.72rem] font-semibold text-muted">Thinking</p>
+            {/* Truthful generic state: the API is not streamed, so nothing here
+                claims which sources have been checked yet. */}
+            <p className="flex items-center gap-1.5 text-[0.72rem] font-semibold text-muted" role="status">
+              <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-current" aria-hidden />
+              Agent is checking verified training context…
+            </p>
             <Skeleton className="h-3 w-4/5" />
             <Skeleton className="h-3 w-3/5" />
           </div>
