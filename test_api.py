@@ -149,6 +149,63 @@ def test_coach_rejects_an_empty_question(client: TestClient) -> None:
 
 
 # --------------------------------------------------------------------------- #
+# CORS — this project's Vercel hosts only
+# --------------------------------------------------------------------------- #
+
+
+def test_cors_allows_this_projects_vercel_hosts_and_rejects_lookalikes() -> None:
+    import re
+
+    from backend.main import allowed_origins, preview_origin_pattern
+
+    pattern = re.compile(preview_origin_pattern())
+    allowed = (
+        "https://personal-readiness-assistant.vercel.app",
+        "https://personal-readiness-assistant-git-main-ethanzhang0617-dot.vercel.app",
+        "https://personal-readiness-assistant-7zn78cr4n-ethanzhang0617-dot.vercel.app",
+    )
+    for origin in allowed:
+        assert pattern.match(origin), origin
+
+    for origin in (
+        "https://evil.vercel.app",
+        "https://personal-readiness-assistant-evil.vercel.app",
+        # A different account slug cannot be created by this project's account,
+        # so another party's deployment never matches.
+        "https://personal-readiness-assistant-evil-someone-else.vercel.app",
+        "https://another-project-git-main-ethanzhang0617-dot.vercel.app",
+        "https://personal-readiness-assistant.vercel.app.evil.com",
+        "http://personal-readiness-assistant.vercel.app",
+    ):
+        assert not pattern.match(origin), origin
+
+    # Any preview host that carries this account's slug belongs to this account;
+    # Vercel reserves that hostname shape for the account itself.
+    assert pattern.match("https://personal-readiness-assistant-preview-x-ethanzhang0617-dot.vercel.app")
+
+    # The explicit list stays the authority for non-Vercel origins.
+    assert "http://localhost:3000" in allowed_origins()
+
+
+def test_cors_preflight_from_a_vercel_preview_origin_is_allowed(client: TestClient) -> None:
+    origin = "https://personal-readiness-assistant-git-main-ethanzhang0617-dot.vercel.app"
+    response = client.options(
+        "/api/state/today",
+        headers={"Origin": origin, "Access-Control-Request-Method": "POST",
+                 "Access-Control-Request-Headers": "content-type"},
+    )
+    assert response.status_code == 200
+    assert response.headers.get("access-control-allow-origin") == origin
+
+    blocked = client.options(
+        "/api/state/today",
+        headers={"Origin": "https://unrelated-site.vercel.app", "Access-Control-Request-Method": "POST",
+                 "Access-Control-Request-Headers": "content-type"},
+    )
+    assert blocked.headers.get("access-control-allow-origin") is None
+
+
+# --------------------------------------------------------------------------- #
 # Phase 2 — stateless compute over client-owned state
 # --------------------------------------------------------------------------- #
 
