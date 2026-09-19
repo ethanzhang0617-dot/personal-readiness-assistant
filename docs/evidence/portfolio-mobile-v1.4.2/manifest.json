@@ -1,0 +1,235 @@
+{
+  "package": "Adaptive_Training_Decision_System_Portfolio_Mobile_Screenshots_V1.4.2",
+  "production_url": "https://personal-readiness-assistant.vercel.app",
+  "release": "v1.4.2 (Agent Visibility)",
+  "production_commit": "6547c77",
+  "product_identity": "Adaptive Training Decision System — AI Coach, Tool-Using Training Agent",
+  "capture": {
+    "browser": "Chromium (in-app automation browser)",
+    "viewport": "390x844 CSS px",
+    "device_pixel_ratio": 1,
+    "notes": "page content only: no tabs, address bar, devtools, console or cursor; no full-page screenshots"
+  },
+  "phone_frame": {
+    "style": "graphite body, thin bezel, rounded corners, speaker slot and camera in the top bezel, single subtle shadow, no brand marks",
+    "canvas": "1000 x 2116 px, transparent background (~5% margin)",
+    "body": "880 x 1896 px",
+    "bezel": {
+      "sides": 14,
+      "top_bottom": 26
+    },
+    "corner_radius": {
+      "outer": 92,
+      "screen": 78
+    },
+    "scaling": "uniform LANCZOS resize of the raw capture to 852 x 1844 (aspect preserved)"
+  },
+  "authenticity": {
+    "real_production_only": true,
+    "mock_or_generated_ui": false,
+    "fake_agent_state": false,
+    "chain_of_thought_exposed": false,
+    "raw_screenshots_preserved": true,
+    "product_code_changed": false,
+    "temporary_state": "one in-session calibration run, discarded through the product UI afterwards"
+  },
+  "assets": [
+    {
+      "framed": "framed/01_today_mobile_light_phone.png",
+      "raw": "raw/01_today_mobile_light_raw.png",
+      "production_url": "https://personal-readiness-assistant.vercel.app",
+      "route": "/",
+      "theme": "Light",
+      "viewport": "390x844",
+      "captured_at": "2026-09-19T17:20:17+0800",
+      "interaction_used": "none",
+      "real_product_state": "Today: readiness 90 GREEN, recommendation Legs (Normal · 50–65 min · 1–3 RIR), Start Session",
+      "raw_source": "portfolio-v1.4.2/02_today_mobile_light.png",
+      "screen_content": "unmodified production capture; framed and uniformly scaled only"
+    },
+    {
+      "framed": "framed/02_train_musclemap_dark_phone.png",
+      "raw": "raw/02_train_musclemap_dark_raw.png",
+      "production_url": "https://personal-readiness-assistant.vercel.app",
+      "route": "/train",
+      "theme": "Dark",
+      "viewport": "390x844",
+      "captured_at": "2026-09-19T17:21:41+0800",
+      "interaction_used": "none",
+      "real_product_state": "Today's session Legs with the MuscleMap front/back body; Quads and Hamstrings/Glutes highlighted",
+      "raw_source": "portfolio-v1.4.2/03_train_musclemap_mobile_dark.png",
+      "screen_content": "unmodified production capture; framed and uniformly scaled only"
+    },
+    {
+      "framed": "framed/03_decision_trace_light_phone.png",
+      "raw": "raw/03_decision_trace_light_raw.png",
+      "production_url": "https://personal-readiness-assistant.vercel.app",
+      "route": "/decision-trace",
+      "theme": "Light",
+      "viewport": "390x844",
+      "captured_at": "2026-09-19T17:20:22+0800",
+      "interaction_used": "none",
+      "real_product_state": "Deterministic decision path from Goal through Session Demand to the Legs recommendation",
+      "raw_source": "portfolio-v1.4.2/06_decision_trace_mobile_light.png",
+      "screen_content": "unmodified production capture; framed and uniformly scaled only"
+    },
+    {
+      "framed": "framed/04_personal_response_light_phone.png",
+      "raw": "raw/04_personal_response_light_raw.png",
+      "production_url": "https://personal-readiness-assistant.vercel.app",
+      "route": "/personal-response",
+      "theme": "Light",
+      "viewport": "390x844",
+      "captured_at": "2026-09-19T17:20:33+0800",
+      "interaction_used": "none",
+      "real_product_state": "Personal Response profile: demand bands with their observed pattern and evidence state",
+      "raw_source": "portfolio-v1.4.2/08_personal_response_mobile_light.png",
+      "screen_content": "unmodified production capture; framed and uniformly scaled only"
+    },
+    {
+      "framed": "framed/05_decision_explorer_light_phone.png",
+      "raw": "raw/05_decision_explorer_light_raw.png",
+      "production_url": "https://personal-readiness-assistant.vercel.app",
+      "route": "/decision-explorer",
+      "theme": "Light",
+      "viewport": "390x844",
+      "captured_at": "2026-09-19T17:20:56+0800",
+      "interaction_used": "selected \"More local soreness\" then \"Compare with the current decision\"",
+      "real_product_state": "Real what-if re-run: current recommendation, the changed input and the alternative",
+      "raw_source": "portfolio-v1.4.2/10_decision_explorer_mobile_light.png",
+      "screen_content": "unmodified production capture; framed and uniformly scaled only"
+    },
+    {
+      "framed": "framed/06_calibration_dark_phone.png",
+      "raw": "raw/06_calibration_dark_raw.png",
+      "production_url": "https://personal-readiness-assistant.vercel.app",
+      "route": "/train (active session)",
+      "theme": "Dark",
+      "viewport": "390x844",
+      "captured_at": "2026-09-19T17:22:18+0800",
+      "interaction_used": "Start Session, then effort \"Easier than expected\", RIR 4, performance \"Better than expected\", \"Check how it feels\" (session discarded afterwards)",
+      "real_product_state": "In-session checkpoint resolved to the real OPTIONAL PUSH state with its guidance text",
+      "raw_source": "portfolio-v1.4.2/11_calibration_mobile_dark.png",
+      "screen_content": "unmodified production capture; framed and uniformly scaled only"
+    },
+    {
+      "framed": "framed/07_agent_home_light_phone.png",
+      "raw": "raw/07_agent_home_light_raw.png",
+      "production_url": "https://personal-readiness-assistant.vercel.app",
+      "route": "/coach",
+      "theme": "Light",
+      "viewport": "390x844",
+      "captured_at": "2026-09-19T17:21:10+0800",
+      "interaction_used": "cleared the browser-local conversation for a clean home",
+      "real_product_state": "Coach home: AI Coach, Tool-Using Training Agent, consumer explanation, 4 questions, 3 categories, input",
+      "raw_source": "portfolio-v1.4.2/12_agent_coach_home_mobile_light.png",
+      "screen_content": "unmodified production capture; framed and uniformly scaled only"
+    },
+    {
+      "framed": "framed/08_agent_answer_dark_phone.png",
+      "raw": "raw/08_agent_answer_dark_raw.png",
+      "production_url": "https://personal-readiness-assistant.vercel.app",
+      "route": "/coach",
+      "theme": "Dark",
+      "viewport": "390x844",
+      "captured_at": "2026-09-19T17:22:53+0800",
+      "interaction_used": "asked \"Why is today's recommendation lighter than usual?\"",
+      "real_product_state": "Real grounded Agent answer with AGENT RUN · GROUNDED and Checked 5 verified sources",
+      "raw_source": "portfolio-v1.4.2/14_agent_answer_mobile_dark.png",
+      "screen_content": "unmodified production capture; framed and uniformly scaled only"
+    },
+    {
+      "framed": "framed/09_agent_trace_expanded_dark_phone.png",
+      "raw": "raw/09_agent_trace_expanded_dark_raw.png",
+      "production_url": "https://personal-readiness-assistant.vercel.app",
+      "route": "/coach",
+      "theme": "Dark",
+      "viewport": "390x844",
+      "captured_at": "2026-09-19T17:23:02+0800",
+      "interaction_used": "expanded \"How this answer was built\" on the same answer",
+      "real_product_state": "Expanded verified-source list with per-source explanations and the deterministic authority line",
+      "raw_source": "portfolio-v1.4.2/15_agent_trace_expanded_mobile_dark.png",
+      "screen_content": "unmodified production capture; framed and uniformly scaled only"
+    },
+    {
+      "framed": "framed/10_agent_decision_explorer_dark_phone.png",
+      "raw": "raw/10_agent_decision_explorer_dark_raw.png",
+      "production_url": "https://personal-readiness-assistant.vercel.app",
+      "route": "/coach",
+      "theme": "Dark",
+      "viewport": "390x844",
+      "captured_at": "2026-09-19T17:23:25+0800",
+      "interaction_used": "asked \"I still want to train back. What would change?\" and expanded the trace",
+      "real_product_state": "Agent answer whose expanded trace contains Decision Explorer — Compared a verified what-if scenario",
+      "raw_source": "portfolio-v1.4.2/17_agent_decision_explorer_trace.png",
+      "screen_content": "unmodified production capture; framed and uniformly scaled only"
+    },
+    {
+      "framed": "framed/11_agent_fast_path_light_phone.png",
+      "raw": "raw/11_agent_fast_path_light_raw.png",
+      "production_url": "https://personal-readiness-assistant.vercel.app",
+      "route": "/coach",
+      "theme": "Light",
+      "viewport": "390x844",
+      "captured_at": "2026-09-19T17:21:22+0800",
+      "interaction_used": "asked \"What is my readiness today?\"",
+      "real_product_state": "Deterministic fast path: RECORDED DATA, Checked 1 verified source, Readiness",
+      "raw_source": "portfolio-v1.4.2/18_agent_fast_path_mobile_light.png",
+      "screen_content": "unmodified production capture; framed and uniformly scaled only"
+    },
+    {
+      "framed": "framed/12_about_agent_architecture_light_phone.png",
+      "raw": "raw/12_about_agent_architecture_light_raw.png",
+      "production_url": "https://personal-readiness-assistant.vercel.app",
+      "route": "/profile/about",
+      "theme": "Light",
+      "viewport": "390x844",
+      "captured_at": "2026-09-19T17:35:04+0800",
+      "interaction_used": "scrolled to the \"How the Agent works\" section",
+      "real_product_state": "Agent architecture: Your question → Agent planner → Verified training tools → Deterministic results → DeepSeek explanation → Grounded answer, plus the tool groups and the core principle",
+      "raw_source": "captured directly for the mobile portfolio set",
+      "screen_content": "unmodified production capture; framed and uniformly scaled only"
+    },
+    {
+      "framed": "framed/13_insights_light_phone.png",
+      "raw": "raw/13_insights_light_raw.png",
+      "production_url": "https://personal-readiness-assistant.vercel.app",
+      "route": "/insights",
+      "theme": "Light",
+      "viewport": "390x844",
+      "captured_at": "2026-09-19T17:20:39+0800",
+      "interaction_used": "none",
+      "real_product_state": "Readiness and training trend view with the personal-response connection",
+      "raw_source": "portfolio-v1.4.2/21_insights_mobile_light.png",
+      "screen_content": "unmodified production capture; framed and uniformly scaled only"
+    }
+  ],
+  "compositions": [
+    {
+      "file": "compositions/portfolio_hero_three_phones.png",
+      "sources": [
+        "framed/02_train_musclemap_dark_phone.png",
+        "framed/01_today_mobile_light_phone.png",
+        "framed/08_agent_answer_dark_phone.png"
+      ],
+      "purpose": "Hero: Train (dark, left, 82%), Today (light, centre, 100%), Agent answer (dark, right, 82%)"
+    },
+    {
+      "file": "compositions/portfolio_agent_sequence.png",
+      "sources": [
+        "framed/07_agent_home_light_phone.png",
+        "framed/08_agent_answer_dark_phone.png",
+        "framed/09_agent_trace_expanded_dark_phone.png"
+      ],
+      "purpose": "Agent journey: Coach home → grounded answer → expanded verified-source trace"
+    },
+    {
+      "file": "compositions/portfolio_adaptive_pair.png",
+      "sources": [
+        "framed/04_personal_response_light_phone.png",
+        "framed/06_calibration_dark_phone.png"
+      ],
+      "purpose": "Adaptive loop pair: Personal Response and in-session Calibration"
+    }
+  ]
+}
