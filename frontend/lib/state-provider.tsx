@@ -27,6 +27,18 @@ export interface ChatMessage {
   kind?: CoachKind;
   notice?: string | null;
   failed?: boolean;
+  /**
+   * V1.4 — the verified sources behind an answer, already in product language.
+   * Additive: an older stored message simply has none, and nothing is reset.
+   */
+  tools?: ChatTool[];
+  grounded?: boolean;
+  fallbackUsed?: boolean;
+}
+
+export interface ChatTool {
+  tool: string;
+  label: string;
 }
 
 export interface ActionResult {
@@ -449,6 +461,9 @@ export function UserStateProvider({ children }: { children: ReactNode }) {
           provider: result.data.provider,
           kind: result.data.kind,
           notice: result.data.notice,
+          tools: (result.data.tool_trace ?? []).map((row) => ({ tool: row.tool, label: row.label })),
+          grounded: result.data.grounded ?? true,
+          fallbackUsed: result.data.fallback_used ?? false,
         },
       ];
       const nextChat = appended.slice(-30);

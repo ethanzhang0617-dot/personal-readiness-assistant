@@ -50,7 +50,7 @@ export function CoachView() {
 
   return (
     <div className="mx-auto flex min-h-[calc(100dvh-9rem)] w-full flex-col gap-5 md:max-w-[42rem]">
-      <PageHeader eyebrow="Coach" title="Ask Coach" description="About today's session, your readiness or your recorded training." />
+      <PageHeader eyebrow="AI Coach" title="Ask Coach" description="About today's session, your readiness or your recorded training." />
 
       <div className="flex-1 space-y-6">
         {chat.length === 0 ? (
@@ -88,6 +88,8 @@ export function CoachView() {
                 </Link>
               ))}
             </nav>
+            {/* Quiet provenance: the answer is built from the product's own tools. */}
+            <p className="px-3 text-[0.72rem] text-muted">Powered by verified training tools.</p>
           </div>
         ) : (
           <>
@@ -114,6 +116,25 @@ export function CoachView() {
                     {provenance?.label ?? "Answer"}
                   </p>
                   <RichText text={message.content} />
+                  {/* Tool trace, not reasoning trace: which verified sources were
+                      checked. Subtle, collapsed by default, product language only. */}
+                  {message.tools && message.tools.length > 0 ? (
+                    <details className="group">
+                      <summary className="flex min-h-9 cursor-pointer list-none items-center gap-1 text-[0.74rem] font-medium text-muted">
+                        Checked {message.tools.length} verified source{message.tools.length === 1 ? "" : "s"}
+                        <span className="transition-transform group-open:rotate-90" aria-hidden>
+                          ›
+                        </span>
+                      </summary>
+                      <ul className="mt-1 space-y-0.5 pl-3">
+                        {message.tools.map((tool) => (
+                          <li key={tool.tool} className="text-[0.72rem] leading-relaxed text-muted">
+                            • {tool.label}
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
+                  ) : null}
                   {message.kind === "ai_explanation" ? (
                     <details className="group">
                       <summary className="flex min-h-9 cursor-pointer list-none items-center gap-1 text-[0.74rem] font-medium text-muted">

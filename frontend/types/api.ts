@@ -347,6 +347,31 @@ export interface CoachMessageResponse {
   verified_data: boolean;
   notice: string | null;
   contract: Record<string, string>;
+  /** V1.4 — the verified sources behind this answer. A tool trace, not reasoning. */
+  tools_used?: string[];
+  tool_trace?: CoachToolTrace[];
+  grounded?: boolean;
+  fallback_used?: boolean;
+  agent?: CoachAgentMeta | null;
+}
+
+export interface CoachToolTrace {
+  tool: string;
+  /** Product-language label, e.g. "Readiness". The UI never shows a tool name. */
+  label: string;
+  source: string;
+  operation: string;
+}
+
+export interface CoachAgentMeta {
+  strategy: string;
+  intent?: string | null;
+  plan_source?: string | null;
+  steps: number;
+  rejected?: { name: string; reason: string }[];
+  planner_error?: string | null;
+  limit_reached?: boolean;
+  provider_seconds?: number | null;
 }
 
 export interface ScienceReference {

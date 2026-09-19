@@ -41,7 +41,7 @@ export function SideNav() {
         })}
       </nav>
       <div className="mt-auto flex items-center justify-between gap-2 px-4 py-4">
-        <span className="text-[0.66rem] font-medium tracking-[0.08em] text-muted">V1.3</span>
+        <span className="text-[0.66rem] font-medium tracking-[0.08em] text-muted">V1.4</span>
         <ThemeToggle />
       </div>
     </aside>

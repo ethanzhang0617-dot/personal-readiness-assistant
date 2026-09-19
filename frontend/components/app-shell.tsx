@@ -20,7 +20,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             Personal Readiness
           </span>
           <span className="hidden md:block" aria-hidden />
-          <span className="text-[0.66rem] font-medium tracking-[0.08em] text-muted">V1.3</span>
+          <span className="text-[0.66rem] font-medium tracking-[0.08em] text-muted">V1.4</span>
         </header>
         <main className="mx-auto w-full max-w-[44rem] flex-1 px-4 pb-[calc(env(safe-area-inset-bottom)+6rem)] pt-4 md:max-w-[62rem] md:px-10 md:pb-20 md:pt-10">
           {children}
